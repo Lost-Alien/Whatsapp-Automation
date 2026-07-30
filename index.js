@@ -33,7 +33,6 @@ const client = new Client({
             '--no-first-run',
             '--no-zygote',
             '--disable-gpu',
-            '--single-process', // Extremely important for memory on Render Free Tier
             '--disable-extensions',
             '--disable-background-networking',
             '--disable-default-apps',
