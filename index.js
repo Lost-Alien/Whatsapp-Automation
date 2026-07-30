@@ -35,6 +35,31 @@ client.on('ready', async () => {
     console.log('✅ WhatsApp Web Client is Ready!');
     console.log(`   Listening for messages from: "${SOURCE_NAME}"`);
     console.log(`   Forwarding updated deals to: "${TARGET_NAME}"`);
+
+    // --- SAFE SIMULATED TEST ---
+    try {
+        console.log('\n--- Running Simulated Test ---');
+        const allChats = await client.getChats();
+        const targetChat = allChats.find(
+            (c) => c.name && c.name.trim().toLowerCase() === TARGET_NAME.trim().toLowerCase()
+        );
+
+        if (targetChat) {
+            console.log('Target chat found! Simulating a deal link swap...');
+            
+            // We use a simulated message instead of fetching from the channel to avoid the "r" crash.
+            const fakeMessage = "🚨 HUGE DEAL! 🚨\nGrab this amazing smartphone now: https://amzn.to/3RGEFPV";
+            const modifiedText = await processMessageContent(fakeMessage, SECONDARY_TAG, AMAZON_DOMAIN);
+            
+            await targetChat.sendMessage("🤖 [BOT TEST]\n" + modifiedText);
+            console.log(`✅ Simulated test deal posted to "${TARGET_NAME}" successfully!`);
+        } else {
+            console.error(`❌ Target chat "${TARGET_NAME}" not found. Are you an admin?`);
+        }
+        console.log('------------------------------\n');
+    } catch (err) {
+        console.error('❌ Error during simulated test:', err.message);
+    }
 });
 
 // Listen for incoming messages
