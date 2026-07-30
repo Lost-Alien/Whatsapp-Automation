@@ -18,97 +18,114 @@ let authStatus = 'INITIALIZING';
 let qrCodeData = null;
 let pairingCode = null;
 let requestPairingPhone = null;
+let client = null; // Will be initialized in startClient()
 
-// Initialize WhatsApp Web Client
-const client = new Client({
-    authStrategy: new LocalAuth({ dataPath: './.wwebjs_auth' }),
-    puppeteer: {
-        headless: true,
-        executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
-        args: [
-            '--no-sandbox',
-            '--disable-setuid-sandbox',
-            '--disable-dev-shm-usage',
-            '--disable-accelerated-2d-canvas',
-            '--no-first-run',
-            '--no-zygote',
-            '--disable-gpu',
-            '--disable-extensions',
-            '--disable-background-networking',
-            '--disable-default-apps',
-            '--disable-sync',
-            '--disable-translate',
-            '--hide-scrollbars',
-            '--metrics-recording-only',
-            '--mute-audio',
-            '--safebrowsing-disable-auto-update',
-            '--ignore-certificate-errors',
-            '--ignore-ssl-errors',
-            '--ignore-certificate-errors-spki-list'
-        ]
-    }
-});
-
-// Display QR Code for login or request pairing code
-client.on('qr', async (qr) => {
-    authStatus = 'NEEDS_LOGIN';
-    
-    if (requestPairingPhone) {
-        try {
-            pairingCode = await client.requestPairingCode(requestPairingPhone);
-            qrCodeData = null; // Clear QR code
-            console.log('\n=============================================================');
-            console.log(`📱 Pairing Code requested! Enter this code on your phone:`);
-            console.log(`                       ${pairingCode}`);
-            console.log('=============================================================\n');
-        } catch(e) {
-            console.error("❌ Failed to request pairing code:", e.message);
-            requestPairingPhone = null;
+function createClient() {
+    return new Client({
+        authStrategy: new LocalAuth({ dataPath: './.wwebjs_auth' }),
+        puppeteer: {
+            headless: true,
+            executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
+            args: [
+                '--no-sandbox',
+                '--disable-setuid-sandbox',
+                '--disable-dev-shm-usage',
+                '--disable-accelerated-2d-canvas',
+                '--no-first-run',
+                '--no-zygote',
+                '--disable-gpu',
+                '--disable-extensions',
+                '--disable-background-networking',
+                '--disable-default-apps',
+                '--disable-sync',
+                '--disable-translate',
+                '--hide-scrollbars',
+                '--metrics-recording-only',
+                '--mute-audio',
+                '--safebrowsing-disable-auto-update',
+                '--ignore-certificate-errors',
+                '--ignore-ssl-errors',
+                '--ignore-certificate-errors-spki-list'
+            ]
         }
-    } else {
-        // Generate QR Code data URL for Web UI
-        qrCodeData = await qrcode.toDataURL(qr);
-        pairingCode = null;
-        console.log('\n================ Scan this QR Code on WhatsApp ================');
-        qrcodeTerminal.generate(qr, { small: true });
-    }
-});
+    });
+}
 
-client.on('ready', () => {
-    authStatus = 'READY';
+function startClient() {
+    authStatus = 'INITIALIZING';
     qrCodeData = null;
     pairingCode = null;
-    console.log('✅ WhatsApp Web Client is Ready!');
-    console.log(`   Listening for messages from ID: "${SOURCE_ID}"`);
-    console.log(`   Forwarding updated deals to ID: "${TARGET_ID}"`);
-    console.log(`\n🌍 Web Dashboard running at: http://localhost:${PORT}\n`);
-});
+    client = createClient();
+    registerClientEvents();
+    client.initialize();
+}
 
-client.on('disconnected', (reason) => {
-    authStatus = 'DISCONNECTED';
-    console.log('❌ Client was logged out', reason);
-});
-
-// Listen for incoming messages
-client.on('message', async (msg) => {
-    try {
-        console.log(`[DEBUG] Received a message from ID: ${msg.from}`);
-
-        if (SOURCE_ID && msg.from === SOURCE_ID.trim()) {
-            console.log(`\n   New deal detected in Source Channel!`);
-            const modifiedText = await processMessageContent(msg.body, SECONDARY_TAG, AMAZON_DOMAIN);
-
-            if (TARGET_ID) {
-                await client.sendMessage(TARGET_ID.trim(), modifiedText);
-                console.log(`   ✅ Converted deal auto-posted to Target Channel successfully!`);
-            } else {
-                console.error(`❌ TARGET_CHAT_ID is missing in .env!`);
+function registerClientEvents() {
+    // Display QR Code for login or request pairing code
+    client.on('qr', async (qr) => {
+        authStatus = 'NEEDS_LOGIN';
+        
+        if (requestPairingPhone) {
+            try {
+                pairingCode = await client.requestPairingCode(requestPairingPhone);
+                qrCodeData = null;
+                console.log('\n=============================================================');
+                console.log(`📱 Pairing Code requested! Enter this code on your phone:`);
+                console.log(`                       ${pairingCode}`);
+                console.log('=============================================================\n');
+            } catch(e) {
+                console.error("❌ Failed to request pairing code:", e.message);
+                requestPairingPhone = null;
             }
+        } else {
+            qrCodeData = await qrcode.toDataURL(qr);
+            pairingCode = null;
+            console.log('\n================ Scan this QR Code on WhatsApp ================');
+            qrcodeTerminal.generate(qr, { small: true });
         }
-    } catch (error) {
-        console.error('❌ Error handling message:', error.stack || error);
-    }
-});
+    });
+
+    client.on('ready', () => {
+        authStatus = 'READY';
+        qrCodeData = null;
+        pairingCode = null;
+        console.log('✅ WhatsApp Web Client is Ready!');
+        console.log(`   Listening for messages from ID: "${SOURCE_ID}"`);
+        console.log(`   Forwarding updated deals to ID: "${TARGET_ID}"`);
+        console.log(`\n🌍 Web Dashboard running at: http://localhost:${PORT}\n`);
+    });
+
+    client.on('disconnected', (reason) => {
+        authStatus = 'DISCONNECTED';
+        console.warn(`⚠️  Client disconnected: ${reason}. Restarting in 10 seconds...`);
+        // Auto-restart after 10 seconds
+        setTimeout(() => {
+            console.log('🔄 Restarting WhatsApp client...');
+            startClient();
+        }, 10000);
+    });
+
+    // Listen for incoming messages
+    client.on('message', async (msg) => {
+        try {
+            console.log(`[DEBUG] Received a message from ID: ${msg.from}`);
+
+            if (SOURCE_ID && msg.from === SOURCE_ID.trim()) {
+                console.log(`\n   New deal detected in Source Channel!`);
+                const modifiedText = await processMessageContent(msg.body, SECONDARY_TAG, AMAZON_DOMAIN);
+
+                if (TARGET_ID) {
+                    await client.sendMessage(TARGET_ID.trim(), modifiedText);
+                    console.log(`   ✅ Converted deal auto-posted to Target Channel successfully!`);
+                } else {
+                    console.error(`❌ TARGET_CHAT_ID is missing in .env!`);
+                }
+            }
+        } catch (error) {
+            console.error('❌ Error handling message:', error.stack || error);
+        }
+    });
+}
 
 // --- EXPRESS WEB SERVER ---
 app.get('/', (req, res) => {
@@ -190,5 +207,5 @@ app.post('/request-code', (req, res) => {
 
 app.listen(PORT, () => {
     console.log(`🌍 Web Dashboard is running on port ${PORT}`);
-    client.initialize();
+    startClient();
 });
