@@ -20,6 +20,15 @@ let pairingCode = null;
 let requestPairingPhone = null;
 let client = null; // Will be initialized in startClient()
 
+// Prevent Node process crash from Puppeteer async errors on disconnect
+process.on('uncaughtException', (err) => {
+    if (err.message && err.message.includes('Execution context was destroyed')) {
+        console.warn('⚠️  Ignored Puppeteer navigation error during restart/disconnect.');
+    } else {
+        console.error('❌ Uncaught Exception:', err);
+    }
+});
+
 function createClient() {
     return new Client({
         authStrategy: new LocalAuth({ dataPath: './.wwebjs_auth' }),
