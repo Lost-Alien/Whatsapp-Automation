@@ -1,11 +1,12 @@
 const { Client, LocalAuth } = require('whatsapp-web.js');
 const qrcode = require('qrcode-terminal');
-const axios = require('axios');
+const { processMessageContent } = require('./src/amazonParser');
 require('dotenv').config();
 
 const SECONDARY_TAG = process.env.SECONDARY_STORE_ID || 'techstor0caaf-21';
 const SOURCE_NAME = process.env.SOURCE_CHAT_NAME || 'The Mobile Magnet';
 const TARGET_NAME = process.env.TARGET_CHAT_NAME;
+const AMAZON_DOMAIN = process.env.AMAZON_DOMAIN || 'amazon.in';
 
 // Initialize WhatsApp Web Client
 const client = new Client({
@@ -36,69 +37,6 @@ client.on('ready', async () => {
     console.log(`   Forwarding updated deals to: "${TARGET_NAME}"`);
 });
 
-/**
- * Resolves shortened URLs and extracts Amazon ASIN to rebuild affiliate links
- */
-async function convertAmazonLink(rawUrl, newTag) {
-    try {
-        // Send a HEAD/GET request to expand redirects
-        const response = await axios.get(rawUrl, {
-            maxRedirects: 5,
-            timeout: 8000,
-            headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
-            }
-        });
-
-        const finalUrl = response.request.res.responseUrl || rawUrl;
-
-        // Match Amazon Product ASIN (e.g. B0H1WVW8VY)
-        const asinMatch = finalUrl.match(/\/(dp|gp\/product)\/([A-Z0-9]{10})/i);
-
-        if (asinMatch && asinMatch[2]) {
-            const asin = asinMatch[2];
-            return `https://www.amazon.in/dp/${asin}?tag=${newTag}`;
-        }
-
-        // Fallback: direct tag parameter replacement
-        if (finalUrl.includes('tag=')) {
-            return finalUrl.replace(/tag=[^&]+/, `tag=${newTag}`);
-        }
-
-        return finalUrl;
-    } catch (err) {
-        console.error(`⚠️ Error expanding link (${rawUrl}):`, err.message);
-        return rawUrl;
-    }
-}
-
-/**
- * Parses message text and replaces all Amazon links with new store ID
- */
-async function processMessageContent(body) {
-    const urlRegex = /(https?:\/\/[^\s]+)/g;
-    const matches = body.match(urlRegex);
-
-    if (!matches || matches.length === 0) return body;
-
-    let updatedText = body;
-
-    for (const link of matches) {
-        // Check for common Amazon domains and shorteners
-        if (
-            link.includes('amazon') ||
-            link.includes('amzn.to') ||
-            link.includes('link.amazon') ||
-            link.includes('amzaff.to')
-        ) {
-            const convertedLink = await convertAmazonLink(link, SECONDARY_TAG);
-            updatedText = updatedText.replace(link, convertedLink);
-        }
-    }
-
-    return updatedText;
-}
-
 // Listen for incoming messages
 client.on('message', async (msg) => {
     try {
@@ -109,7 +47,7 @@ client.on('message', async (msg) => {
             console.log(`\n   New message detected in "${chat.name}"`);
 
             // Process text and replace affiliate links
-            const modifiedText = await processMessageContent(msg.body);
+            const modifiedText = await processMessageContent(msg.body, SECONDARY_TAG, AMAZON_DOMAIN);
 
             // Search for target destination chat
             const allChats = await client.getChats();
