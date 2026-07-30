@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: wa-affiliate-bot
+    env: docker
+    dockerfilePath: Dockerfile
+    plan: free
+    autoDeploy: false
+    envVars:
+      - key: SOURCE_CHAT_ID
+        sync: false
+      - key: TARGET_CHAT_ID
+        sync: false
+      - key: SECONDARY_STORE_ID
+        sync: false
+      - key: AMAZON_DOMAIN
+        sync: false
