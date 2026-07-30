@@ -1,7 +1,16 @@
 const { Client, LocalAuth } = require('whatsapp-web.js');
 const qrcode = require('qrcode-terminal');
 const { processMessageContent } = require('./src/amazonParser');
+const readline = require('readline');
 require('dotenv').config();
+
+const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout
+});
+
+let usePairingCode = false;
+let userPhoneNumber = '';
 
 const SECONDARY_TAG = process.env.SECONDARY_STORE_ID || 'techstor0caaf-21';
 const SOURCE_NAME = process.env.SOURCE_CHAT_NAME || 'The Mobile Magnet';
@@ -25,10 +34,22 @@ const client = new Client({
     }
 });
 
-// Display QR Code for login
-client.on('qr', (qr) => {
-    console.log('\n================ Scan this QR Code on WhatsApp ================');
-    qrcode.generate(qr, { small: true });
+// Display QR Code for login or request pairing code
+client.on('qr', async (qr) => {
+    if (usePairingCode) {
+        try {
+            const code = await client.requestPairingCode(userPhoneNumber);
+            console.log('\n=============================================================');
+            console.log(`📱 Pairing Code requested! Enter this code on your phone:`);
+            console.log(`                       ${code}`);
+            console.log('=============================================================\n');
+        } catch(e) {
+            console.error("❌ Failed to request pairing code:", e.message);
+        }
+    } else {
+        console.log('\n================ Scan this QR Code on WhatsApp ================');
+        qrcode.generate(qr, { small: true });
+    }
 });
 
 client.on('ready', async () => {
@@ -92,4 +113,18 @@ client.on('message', async (msg) => {
     }
 });
 
-client.initialize();
+// Prompt for authentication method before initializing
+rl.question('\nDo you want to use a phone Pairing Code? \nIf yes, enter your phone number with country code (e.g. 919876543210). \nIf no, just press Enter to use a QR Code: ', (answer) => {
+    const cleanAnswer = answer.replace(/[^0-9]/g, '');
+    
+    if (cleanAnswer.length > 5) {
+        usePairingCode = true;
+        userPhoneNumber = cleanAnswer;
+        console.log(`\nStarting bot and requesting pairing code for +${userPhoneNumber}...`);
+    } else {
+        console.log('\nStarting bot with QR Code authentication...');
+    }
+    
+    rl.close();
+    client.initialize();
+});
