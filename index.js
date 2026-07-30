@@ -13,8 +13,8 @@ let usePairingCode = false;
 let userPhoneNumber = '';
 
 const SECONDARY_TAG = process.env.SECONDARY_STORE_ID || 'techstor0caaf-21';
-const SOURCE_NAME = process.env.SOURCE_CHAT_NAME || 'The Mobile Magnet';
-const TARGET_NAME = process.env.TARGET_CHAT_NAME;
+const SOURCE_ID = process.env.SOURCE_CHAT_ID; // e.g., 12036319323123@newsletter
+const TARGET_ID = process.env.TARGET_CHAT_ID; // e.g., 12036319323124@newsletter
 const AMAZON_DOMAIN = process.env.AMAZON_DOMAIN || 'amazon.in';
 
 // Initialize WhatsApp Web Client
@@ -54,62 +54,34 @@ client.on('qr', async (qr) => {
 
 client.on('ready', async () => {
     console.log('✅ WhatsApp Web Client is Ready!');
-    console.log(`   Listening for messages from: "${SOURCE_NAME}"`);
-    console.log(`   Forwarding updated deals to: "${TARGET_NAME}"`);
-
-    // --- SAFE SIMULATED TEST ---
-    try {
-        console.log('\n--- Running Simulated Test ---');
-        const allChats = await client.getChats();
-        const targetChat = allChats.find(
-            (c) => c.name && c.name.trim().toLowerCase() === TARGET_NAME.trim().toLowerCase()
-        );
-
-        if (targetChat) {
-            console.log('Target chat found! Simulating a deal link swap...');
-            
-            // We use a simulated message instead of fetching from the channel to avoid the "r" crash.
-            const fakeMessage = "🚨 HUGE DEAL! 🚨\nGrab this amazing smartphone now: https://amzn.to/3RGEFPV";
-            const modifiedText = await processMessageContent(fakeMessage, SECONDARY_TAG, AMAZON_DOMAIN);
-            
-            await targetChat.sendMessage("🤖 [BOT TEST]\n" + modifiedText);
-            console.log(`✅ Simulated test deal posted to "${TARGET_NAME}" successfully!`);
-        } else {
-            console.error(`❌ Target chat "${TARGET_NAME}" not found. Are you an admin?`);
-        }
-        console.log('------------------------------\n');
-    } catch (err) {
-        console.error('❌ Error during simulated test:', err.message);
-    }
+    console.log(`   Listening for messages from ID: "${SOURCE_ID}"`);
+    console.log(`   Forwarding updated deals to ID: "${TARGET_ID}"`);
+    console.log('\n💡 TIP: If you do not know your Channel IDs, just send a message in them and watch this terminal!\n');
 });
 
 // Listen for incoming messages
 client.on('message', async (msg) => {
     try {
-        const chat = await msg.getChat();
+        // ALWAYS log the incoming ID so the user can discover their channel IDs easily
+        console.log(`[DEBUG] Received a message from ID: ${msg.from}`);
 
-        // Check if message is from your Source Channel/Group
-        if (chat.name && chat.name.trim().toLowerCase() === SOURCE_NAME.trim().toLowerCase()) {
-            console.log(`\n   New message detected in "${chat.name}"`);
+        // Check if message is from your Source Channel ID
+        if (SOURCE_ID && msg.from === SOURCE_ID.trim()) {
+            console.log(`\n   New deal detected in Source Channel!`);
 
             // Process text and replace affiliate links
             const modifiedText = await processMessageContent(msg.body, SECONDARY_TAG, AMAZON_DOMAIN);
 
-            // Search for target destination chat
-            const allChats = await client.getChats();
-            const targetChat = allChats.find(
-                (c) => c.name && c.name.trim().toLowerCase() === TARGET_NAME.trim().toLowerCase()
-            );
-
-            if (targetChat) {
-                await targetChat.sendMessage(modifiedText);
-                console.log(`   Converted deal auto-posted to "${TARGET_NAME}" successfully!`);
+            if (TARGET_ID) {
+                // Send directly to the target ID, bypassing getChat() entirely!
+                await client.sendMessage(TARGET_ID.trim(), modifiedText);
+                console.log(`   ✅ Converted deal auto-posted to Target Channel successfully!`);
             } else {
-                console.error(`❌ Target chat "${TARGET_NAME}" not found. Please check chat name in .env`);
+                console.error(`❌ TARGET_CHAT_ID is missing in .env!`);
             }
         }
     } catch (error) {
-        console.error('❌ Error handling message:', error.message);
+        console.error('❌ Error handling message:', error.stack || error);
     }
 });
 
