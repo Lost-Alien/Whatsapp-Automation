@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "description": "Automated WhatsApp Link Swapper Bot",
   "main": "index.js",
+  "author": "Lost-Alien",
   "scripts": {
     "start": "node index.js"
   },
