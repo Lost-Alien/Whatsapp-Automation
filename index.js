@@ -34,43 +34,6 @@ client.on('ready', async () => {
     console.log('✅ WhatsApp Web Client is Ready!');
     console.log(`   Listening for messages from: "${SOURCE_NAME}"`);
     console.log(`   Forwarding updated deals to: "${TARGET_NAME}"`);
-
-    // --- TEST LOGIC: Fetch last message and process it ---
-    try {
-        console.log('\n--- Running Initial Test ---');
-        const allChats = await client.getChats();
-        const sourceChat = allChats.find(
-            (c) => c.name && c.name.trim().toLowerCase() === SOURCE_NAME.trim().toLowerCase()
-        );
-        const targetChat = allChats.find(
-            (c) => c.name && c.name.trim().toLowerCase() === TARGET_NAME.trim().toLowerCase()
-        );
-
-        if (sourceChat && targetChat) {
-            console.log(`Fetching recent messages from "${SOURCE_NAME}"...`);
-            // Fetch the last 10 messages to find the most recent text message
-            const messages = await sourceChat.fetchMessages({ limit: 10 });
-            
-            // Reversing so the newest message is first
-            const lastMessage = messages.reverse().find(m => m.body && m.body.trim() !== '');
-
-            if (lastMessage) {
-                console.log('Found recent message, processing links...');
-                const modifiedText = await processMessageContent(lastMessage.body);
-                
-                await targetChat.sendMessage(modifiedText);
-                console.log(`✅ Test deal auto-posted to "${TARGET_NAME}" successfully!`);
-            } else {
-                console.log('No recent text messages found in the source channel to test.');
-            }
-        } else {
-            if (!sourceChat) console.error(`❌ Source chat "${SOURCE_NAME}" not found. Are you following it?`);
-            if (!targetChat) console.error(`❌ Target chat "${TARGET_NAME}" not found. Are you an admin?`);
-        }
-        console.log('--- Test Complete ---\n');
-    } catch (err) {
-        console.error('❌ Error during test run:', err.message);
-    }
 });
 
 /**
