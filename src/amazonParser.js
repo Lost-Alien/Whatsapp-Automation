@@ -42,7 +42,9 @@ async function convertAmazonLink(rawUrl, newTag, amazonDomain) {
         return finalUrl.replace(/tag=[^&]+/, `tag=${newTag}`);
     }
 
-    return finalUrl;
+    // Ultimate fallback: append the tag if it doesn't exist at all
+    const separator = finalUrl.includes('?') ? '&' : '?';
+    return `${finalUrl}${separator}tag=${newTag}`;
 }
 
 async function processMessageContent(body, newTag, amazonDomain) {

@@ -13,21 +13,21 @@ const PORT = process.env.PORT || 3000;
 
 const app = express();
 app.use(express.urlencoded({ extended: true }));
+app.use(express.json());
+
+const appLogs = [];
+function addLog(message) {
+    const time = new Date().toLocaleTimeString();
+    console.log(message);
+    appLogs.push(`[${time}] ${message}`);
+    if (appLogs.length > 100) appLogs.shift();
+}
 
 let authStatus = 'INITIALIZING';
 let qrCodeData = null;
 let pairingCode = null;
 let requestPairingPhone = null;
 let client = null; // Will be initialized in startClient()
-
-// Prevent Node process crash from Puppeteer async errors on disconnect
-process.on('uncaughtException', (err) => {
-    if (err.message && err.message.includes('Execution context was destroyed')) {
-        console.warn('⚠️  Ignored Puppeteer navigation error during restart/disconnect.');
-    } else {
-        console.error('❌ Uncaught Exception:', err);
-    }
-});
 
 function createClient() {
     return new Client({
@@ -73,7 +73,7 @@ function registerClientEvents() {
     // Display QR Code for login or request pairing code
     client.on('qr', async (qr) => {
         authStatus = 'NEEDS_LOGIN';
-        
+
         if (requestPairingPhone) {
             try {
                 pairingCode = await client.requestPairingCode(requestPairingPhone);
@@ -82,7 +82,7 @@ function registerClientEvents() {
                 console.log(`📱 Pairing Code requested! Enter this code on your phone:`);
                 console.log(`                       ${pairingCode}`);
                 console.log('=============================================================\n');
-            } catch(e) {
+            } catch (e) {
                 console.error("❌ Failed to request pairing code:", e.message);
                 requestPairingPhone = null;
             }
@@ -98,18 +98,17 @@ function registerClientEvents() {
         authStatus = 'READY';
         qrCodeData = null;
         pairingCode = null;
-        console.log('✅ WhatsApp Web Client is Ready!');
-        console.log(`   Listening for messages from ID: "${SOURCE_ID}"`);
-        console.log(`   Forwarding updated deals to ID: "${TARGET_ID}"`);
-        console.log(`\n🌍 Web Dashboard running at: http://localhost:${PORT}\n`);
+        addLog('✅ WhatsApp Web Client is Ready!');
+        addLog(`Listening for messages from ID: "${SOURCE_ID}"`);
+        addLog(`Forwarding updated deals to ID: "${TARGET_ID}"`);
     });
 
     client.on('disconnected', (reason) => {
         authStatus = 'DISCONNECTED';
-        console.warn(`⚠️  Client disconnected: ${reason}. Restarting in 10 seconds...`);
+        addLog(`⚠️  Client disconnected: ${reason}. Restarting in 10 seconds...`);
         // Auto-restart after 10 seconds
         setTimeout(() => {
-            console.log('🔄 Restarting WhatsApp client...');
+            addLog('🔄 Restarting WhatsApp client...');
             startClient();
         }, 10000);
     });
@@ -117,21 +116,21 @@ function registerClientEvents() {
     // Listen for incoming messages
     client.on('message', async (msg) => {
         try {
-            console.log(`[DEBUG] Received a message from ID: ${msg.from}`);
+            addLog(`[DEBUG] Received a message from ID: ${msg.from}`);
 
             if (SOURCE_ID && msg.from === SOURCE_ID.trim()) {
-                console.log(`\n   New deal detected in Source Channel!`);
+                addLog(`New deal detected in Source Channel!`);
                 const modifiedText = await processMessageContent(msg.body, SECONDARY_TAG, AMAZON_DOMAIN);
 
                 if (TARGET_ID) {
                     await client.sendMessage(TARGET_ID.trim(), modifiedText);
-                    console.log(`   ✅ Converted deal auto-posted to Target Channel successfully!`);
+                    addLog(`✅ Converted deal auto-posted to Target Channel successfully!`);
                 } else {
-                    console.error(`❌ TARGET_CHAT_ID is missing in .env!`);
+                    addLog(`❌ TARGET_CHAT_ID is missing in .env!`);
                 }
             }
         } catch (error) {
-            console.error('❌ Error handling message:', error.stack || error);
+            addLog(`❌ Error handling message: ${error.message}`);
         }
     });
 }
@@ -147,7 +146,7 @@ app.get('/', (req, res) => {
         <title>WhatsApp Bot Dashboard</title>
         <style>
             body { font-family: -apple-system, system-ui, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; text-align: center; margin-top: 50px; background-color: #f0f2f5; color: #1c1e21; }
-            .card { background: white; padding: 40px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); display: inline-block; max-width: 500px; width: 100%; box-sizing: border-box; }
+            .card { background: white; padding: 40px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); display: inline-block; max-width: 600px; width: 100%; box-sizing: border-box; }
             h1 { color: #25D366; }
             .status { font-weight: bold; padding: 15px; border-radius: 6px; margin: 20px 0; }
             .status.ready { background: #d4edda; color: #155724; }
@@ -157,6 +156,10 @@ app.get('/', (req, res) => {
             button:hover { background-color: #128C7E; }
             .code { font-size: 38px; letter-spacing: 6px; font-weight: bold; margin: 20px 0; color: #000; background: #eee; padding: 15px; border-radius: 8px; }
             a { color: #128C7E; text-decoration: none; font-weight: bold; }
+            
+            /* Log Viewer Styles */
+            .terminal { background: #1e1e1e; color: #4af626; font-family: 'Courier New', Courier, monospace; font-size: 14px; text-align: left; padding: 15px; border-radius: 8px; height: 300px; overflow-y: auto; margin-top: 20px; box-shadow: inset 0 0 10px rgba(0,0,0,0.5); border: 1px solid #333; }
+            .terminal p { margin: 4px 0; line-height: 1.4; word-wrap: break-word; }
         </style>
         ${authStatus !== 'READY' ? '<meta http-equiv="refresh" content="5">' : ''}
     </head>
@@ -166,14 +169,44 @@ app.get('/', (req, res) => {
     `;
 
     if (authStatus === 'READY') {
-        html += `<div class="status ready">✅ Bot is securely logged in and running!</div>`;
+        html += `
+            <div class="status ready">✅ Bot is securely logged in and running!</div>
+            <h3>Live Activity Logs</h3>
+            <div id="log-container" class="terminal">
+                <p>Loading logs...</p>
+            </div>
+            <script>
+                async function fetchLogs() {
+                    try {
+                        const response = await fetch('/api/logs');
+                        const logs = await response.json();
+                        const container = document.getElementById('log-container');
+                        
+                        if (logs.length === 0) {
+                            container.innerHTML = '<p>Waiting for activity...</p>';
+                        } else {
+                            const html = logs.map(log => '<p>' + log + '</p>').join('');
+                            if (container.innerHTML !== html) {
+                                container.innerHTML = html;
+                                container.scrollTop = container.scrollHeight;
+                            }
+                        }
+                    } catch (e) {
+                        console.error('Failed to fetch logs', e);
+                    }
+                }
+                
+                setInterval(fetchLogs, 2000);
+                fetchLogs();
+            </script>
+        `;
     } else if (authStatus === 'INITIALIZING') {
         html += `<div class="status pending">⏳ Starting up WhatsApp Client...<br><small>Please wait a few seconds...</small></div>`;
     } else if (authStatus === 'DISCONNECTED') {
         html += `<div class="status pending">❌ Bot was disconnected. Please restart the server.</div>`;
     } else if (authStatus === 'NEEDS_LOGIN') {
         html += `<div class="status pending">🔐 Authentication Required</div>`;
-        
+
         if (pairingCode) {
             html += `
                 <p>Enter this Pairing Code on your phone:<br/>(Linked Devices > Link a Device > Link with phone number instead)</p>
@@ -202,6 +235,10 @@ app.get('/', (req, res) => {
     </html>
     `;
     res.send(html);
+});
+
+app.get('/api/logs', (req, res) => {
+    res.json(appLogs);
 });
 
 app.post('/request-code', (req, res) => {
