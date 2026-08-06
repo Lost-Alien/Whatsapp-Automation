@@ -1,0 +1,2 @@
+# Git Push Workflow
+When pushing code via Git, always configure my local Git author credentials explicitly before committing. Set my username to 'Lost-Alien' and my email to 'lostdev.tech@gmail.com'. Additionally, because Windows Git Credential Manager can cache invalid credentials, bypass it entirely by fetching the GitHub CLI token (using 'gh auth token') and embedding it directly into the git push URL.
