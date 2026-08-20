@@ -259,7 +259,7 @@ app.post('/request-code', (req, res) => {
     res.redirect('/');
 });
 
-app.listen(PORT, () => {
-    console.log(`🌍 Web Dashboard is running on port ${PORT}`);
+app.listen(PORT, '0.0.0.0', () => {
+    console.log(`🌍 Web Dashboard is running on http://0.0.0.0:${PORT}`);
     startClient();
 });
