@@ -121,26 +121,43 @@ function registerClientEvents() {
         }, 10000);
     });
 
-    // Listen for incoming messages
-    client.on('message', async (msg) => {
+    // Set to track processed messages and prevent duplicate triggers with zero rate limits
+    const processedMessages = new Set();
+
+    async function handleIncomingMessage(msg) {
+        if (!msg || !msg.body) return;
+        const msgId = msg.id?._serialized || `${msg.from}_${msg.timestamp}_${msg.body.substring(0, 20)}`;
+
+        if (processedMessages.has(msgId)) return;
+        processedMessages.add(msgId);
+        // Keep set bounded to latest 1000 messages
+        if (processedMessages.size > 1000) {
+            const firstEntry = processedMessages.values().next().value;
+            processedMessages.delete(firstEntry);
+        }
+
         try {
-            addLog(`[DEBUG] Received a message from ID: ${msg.from}`);
+            addLog(`[DEBUG] Received message from: ${msg.from}`);
 
             if (SOURCE_ID && msg.from === SOURCE_ID.trim()) {
-                addLog(`New deal detected in Source Channel!`);
+                addLog(`🔥 New deal detected in Source Channel! Processing immediately without limits...`);
                 const modifiedText = await processMessageContent(msg.body, SECONDARY_TAG, AMAZON_DOMAIN, CUELINKS_API_KEY, CUELINKS_CHANNEL_ID);
 
-                if (TARGET_ID) {
+                if (TARGET_ID && modifiedText && modifiedText.trim().length > 0) {
                     await client.sendMessage(TARGET_ID.trim(), modifiedText);
                     addLog(`✅ Converted deal auto-posted to Target Channel successfully!`);
-                } else {
+                } else if (!TARGET_ID) {
                     addLog(`❌ TARGET_CHAT_ID is missing in .env!`);
                 }
             }
         } catch (error) {
-            addLog(`❌ Error handling message: ${error.message}`);
+            addLog(`❌ Error handling deal message: ${error.message}`);
         }
-    });
+    }
+
+    // Listen for incoming messages across both standard and broadcast events (zero limits)
+    client.on('message', handleIncomingMessage);
+    client.on('message_create', handleIncomingMessage);
 }
 
 // --- EXPRESS WEB SERVER ---
