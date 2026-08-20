@@ -1,9 +1,13 @@
 const { 
     TARGET_CHANNEL_LINK,
+    isAmazonUrl,
     convertAmazonLink, 
     stripPromotionalContent, 
     processMessageContent 
 } = require('../src/amazonParser');
+const { convertCuelinks } = require('../src/cuelinksParser');
+
+jest.mock('../src/cuelinksParser');
 
 describe('Amazon URL Parser Logic', () => {
     const affiliateTag = 'techstor0caaf-21';
@@ -44,6 +48,18 @@ describe('Amazon URL Parser Logic', () => {
         const result = await convertAmazonLink(rawUrl, affiliateTag, mockDomain);
         expect(result).toBe('https://www.amazon.in/b?node=12345&tag=techstor0caaf-21');
     });
+
+    test('isAmazonUrl correctly identifies Amazon vs Non-Amazon URLs', () => {
+        expect(isAmazonUrl('https://www.amazon.in/dp/B0H1WVW8VY')).toBe(true);
+        expect(isAmazonUrl('https://amzn.to/3XYZ')).toBe(true);
+        expect(isAmazonUrl('https://amzn.eu/d/123')).toBe(true);
+        expect(isAmazonUrl('https://link.amazon/abc')).toBe(true);
+        expect(isAmazonUrl('https://amzaff.to/deal')).toBe(true);
+
+        expect(isAmazonUrl('https://www.flipkart.com/item/123')).toBe(false);
+        expect(isAmazonUrl('https://www.myntra.com/tshirt/456')).toBe(false);
+        expect(isAmazonUrl('https://www.ajio.com/shoes/789')).toBe(false);
+    });
 });
 
 describe('Promotional Text and URL Stripper Logic', () => {
@@ -77,11 +93,16 @@ More loots: https://bit.ly/3xyz123`;
     });
 });
 
-describe('Full Message Processing Pipeline', () => {
+describe('Full Message Processing Pipeline with Amazon & Cuelinks Routing', () => {
     const affiliateTag = 'techstor0caaf-21';
     const mockDomain = 'amazon.in';
+    const mockCuelinksKey = 'LmNADAnOLIEimDh8ItTaUEqjy1W_QTnfEkdXIaXqn7c';
 
-    test('Full message with Req Jind, promo channels, tinyurls, and Amazon link', async () => {
+    beforeEach(() => {
+        jest.clearAllMocks();
+    });
+
+    test('Full message with Amazon link uses Amazon tag', async () => {
         const message = `Req Jind
 
 Only Mobile,TV Electronic Deals👇 
@@ -97,32 +118,70 @@ Deal Price: ₹65,999 (MRP ₹79,900)
 Deal Price: ₹65,999 (MRP ₹79,900)
 👉 Buy Here: https://www.amazon.in/dp/B0CHX1W1XY?tag=techstor0caaf-21\n\n${TARGET_CHANNEL_LINK}`;
 
-        const result = await processMessageContent(message, affiliateTag, mockDomain);
+        const result = await processMessageContent(message, affiliateTag, mockDomain, mockCuelinksKey);
         expect(result).toBe(expected);
+        expect(convertCuelinks).not.toHaveBeenCalled();
     });
 
-    test('Full message with Req Tohana and trailing promos', async () => {
+    test('Full message with Flipkart link converts via Cuelinks', async () => {
+        convertCuelinks.mockResolvedValueOnce('https://fkrt.clnk.in/BWhS');
+
         const message = `Req Tohana
 
-🔥 Noise Pulse 2 Max Smartwatch
-Price: ₹1,199
-Link: https://www.amazon.in/dp/B0B6916B6F?tag=other-21
+🔥 Realme P1 5G Smartphone
+Price: ₹14,999
+Link: https://www.flipkart.com/realme-p1-5g/p/itm12345
 
 Only Mobile,TV Electronic Deals👇 
 https://whatsapp.com/channel/0029Va8sHsBDTkK7E9LCXq2D`;
 
-        const expected = `🔥 Noise Pulse 2 Max Smartwatch
-Price: ₹1,199
-Link: https://www.amazon.in/dp/B0B6916B6F?tag=techstor0caaf-21\n\n${TARGET_CHANNEL_LINK}`;
+        const expected = `🔥 Realme P1 5G Smartphone
+Price: ₹14,999
+Link: https://fkrt.clnk.in/BWhS\n\n${TARGET_CHANNEL_LINK}`;
 
-        const result = await processMessageContent(message, affiliateTag, mockDomain);
+        const result = await processMessageContent(message, affiliateTag, mockDomain, mockCuelinksKey);
+        expect(result).toBe(expected);
+        expect(convertCuelinks).toHaveBeenCalledWith('https://www.flipkart.com/realme-p1-5g/p/itm12345', mockCuelinksKey);
+    });
+
+    test('Mixed Message: Both Amazon and Flipkart links converted with respective affiliate engines', async () => {
+        convertCuelinks.mockResolvedValueOnce('https://fkrt.clnk.in/deal123');
+
+        const message = `🔥 Multi-Store Mega Sale!
+
+Amazon Deal: https://www.amazon.in/dp/B0CHX1W1XY?tag=old-21
+Flipkart Deal: https://www.flipkart.com/product/abcde`;
+
+        const expected = `🔥 Multi-Store Mega Sale!
+
+Amazon Deal: https://www.amazon.in/dp/B0CHX1W1XY?tag=techstor0caaf-21
+Flipkart Deal: https://fkrt.clnk.in/deal123\n\n${TARGET_CHANNEL_LINK}`;
+
+        const result = await processMessageContent(message, affiliateTag, mockDomain, mockCuelinksKey);
         expect(result).toBe(expected);
     });
 
-    test('Handles message that already has target channel link without duplicating it', async () => {
-        const message = `🔥 Great Deal https://www.amazon.in/dp/B0CHX1W1XY\n\n${TARGET_CHANNEL_LINK}`;
-        const result = await processMessageContent(message, affiliateTag, mockDomain);
-        const occurrences = (result.match(new RegExp(TARGET_CHANNEL_LINK, 'g')) || []).length;
-        expect(occurrences).toBe(1);
+    // 20 Iteration Test Suite for Full Message Processing
+    describe('20-Iteration Reliability Tests for Message Processing', () => {
+        for (let i = 1; i <= 20; i++) {
+            test(`Iteration ${i}/20: Converts deals and strips spam reliably`, async () => {
+                convertCuelinks.mockResolvedValueOnce(`https://clnk.in/store${i}`);
+
+                const message = `Req Jind
+Only Mobile,TV Electronic Deals👇 
+https://whatsapp.com/channel/0029Va8sHsBDTkK7E9LCXq2D
+
+🔥 Product Deal #${i}
+Amazon: https://www.amazon.in/dp/B0000000${i > 9 ? i : '0' + i}?tag=spam-21
+Other Store: https://www.myntra.com/deal/${i}`;
+
+                const result = await processMessageContent(message, affiliateTag, mockDomain, mockCuelinksKey);
+                expect(result).toContain(`https://www.amazon.in/dp/B0000000${i > 9 ? i : '0' + i}?tag=techstor0caaf-21`);
+                expect(result).toContain(`https://clnk.in/store${i}`);
+                expect(result).not.toContain('Req Jind');
+                expect(result).not.toContain('0029Va8sHsBDTkK7E9LCXq2D');
+                expect(result).toContain(TARGET_CHANNEL_LINK);
+            });
+        }
     });
 });

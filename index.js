@@ -9,6 +9,7 @@ const SECONDARY_TAG = process.env.SECONDARY_STORE_ID || 'techstor0caaf-21';
 const SOURCE_ID = process.env.SOURCE_CHAT_ID;
 const TARGET_ID = process.env.TARGET_CHAT_ID;
 const AMAZON_DOMAIN = process.env.AMAZON_DOMAIN || 'amazon.in';
+const CUELINKS_API_KEY = process.env.CUELINKS_API_KEY;
 const PORT = process.env.PORT || 3000;
 
 const app = express();
@@ -126,7 +127,7 @@ function registerClientEvents() {
 
             if (SOURCE_ID && msg.from === SOURCE_ID.trim()) {
                 addLog(`New deal detected in Source Channel!`);
-                const modifiedText = await processMessageContent(msg.body, SECONDARY_TAG, AMAZON_DOMAIN);
+                const modifiedText = await processMessageContent(msg.body, SECONDARY_TAG, AMAZON_DOMAIN, CUELINKS_API_KEY);
 
                 if (TARGET_ID) {
                     await client.sendMessage(TARGET_ID.trim(), modifiedText);

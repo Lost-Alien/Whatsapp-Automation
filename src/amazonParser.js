@@ -1,6 +1,19 @@
 const axios = require('axios');
+const { convertCuelinks } = require('./cuelinksParser');
 
 const TARGET_CHANNEL_LINK = 'https://whatsapp.com/channel/0029VbDdnbkG3R3e7wu0g70C';
+
+function isAmazonUrl(url) {
+    if (!url || typeof url !== 'string') return false;
+    const lower = url.toLowerCase();
+    return (
+        lower.includes('amazon.') ||
+        lower.includes('amzn.to') ||
+        lower.includes('amzn.eu') ||
+        lower.includes('link.amazon') ||
+        lower.includes('amzaff.to')
+    );
+}
 
 async function expandShortUrl(rawUrl) {
     try {
@@ -89,26 +102,31 @@ function stripPromotionalContent(text) {
     return cleaned;
 }
 
-async function processMessageContent(body, newTag, amazonDomain) {
+async function processMessageContent(body, newTag, amazonDomain, cuelinksApiKey) {
     if (!body || typeof body !== 'string') return '';
 
     // First strip unwanted promotional texts, 3rd party channels, and redirects
     let updatedText = stripPromotionalContent(body);
 
-    // Find and convert all Amazon links in the remaining text
+    const effectiveCuelinksKey = cuelinksApiKey || process.env.CUELINKS_API_KEY;
+
+    // Find and convert all links in the remaining text
     const urlRegex = /(https?:\/\/[^\s]+)/g;
     const matches = updatedText.match(urlRegex);
 
     if (matches && matches.length > 0) {
         for (const link of matches) {
-            if (
-                link.includes('amazon') ||
-                link.includes('amzn.to') ||
-                link.includes('amzn.eu') ||
-                link.includes('link.amazon') ||
-                link.includes('amzaff.to')
-            ) {
+            // Avoid converting our target channel link
+            if (link.includes('0029VbDdnbkG3R3e7wu0g70C')) {
+                continue;
+            }
+
+            if (isAmazonUrl(link)) {
                 const convertedLink = await convertAmazonLink(link, newTag, amazonDomain);
+                updatedText = updatedText.replace(link, convertedLink);
+            } else if (effectiveCuelinksKey) {
+                // Non-Amazon link: Convert via Cuelinks V3 API
+                const convertedLink = await convertCuelinks(link, effectiveCuelinksKey);
                 updatedText = updatedText.replace(link, convertedLink);
             }
         }
@@ -127,8 +145,10 @@ async function processMessageContent(body, newTag, amazonDomain) {
 
 module.exports = {
     TARGET_CHANNEL_LINK,
+    isAmazonUrl,
     expandShortUrl,
     convertAmazonLink,
+    convertCuelinks,
     stripPromotionalContent,
     processMessageContent
 };
