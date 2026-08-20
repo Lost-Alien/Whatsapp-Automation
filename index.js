@@ -137,13 +137,19 @@ function registerClientEvents() {
         }
 
         try {
-            addLog(`[DEBUG] Received message from: ${msg.from}`);
+            let chatName = 'Channel';
+            try {
+                const chat = await msg.getChat();
+                if (chat && chat.name) chatName = chat.name;
+            } catch (e) {}
+
+            addLog(`[DEBUG] Received message from "${chatName}" (ID: ${msg.from})`);
 
             const fromId = (msg.from || '').trim();
             const isMatch = SOURCE_IDS.length === 0 || SOURCE_IDS.includes(fromId);
 
             if (isMatch) {
-                addLog(`🔥 New deal detected from "${fromId}"! Processing immediately without limits...`);
+                addLog(`🔥 New deal detected from "${chatName}" (${fromId})! Processing immediately...`);
                 const modifiedText = await processMessageContent(msg.body, SECONDARY_TAG, AMAZON_DOMAIN, CUELINKS_API_KEY, CUELINKS_CHANNEL_ID);
 
                 if (TARGET_ID && modifiedText && modifiedText.trim().length > 0) {
@@ -151,6 +157,8 @@ function registerClientEvents() {
                     addLog(`✅ Converted deal auto-posted to Target Channel successfully!`);
                 } else if (!TARGET_ID) {
                     addLog(`❌ TARGET_CHAT_ID is missing in .env!`);
+                } else {
+                    addLog(`ℹ️ Message from "${chatName}" dropped (contained only offline dealer rates or promotional spam).`);
                 }
             }
         } catch (error) {
