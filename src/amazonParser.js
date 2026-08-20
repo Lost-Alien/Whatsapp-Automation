@@ -1,6 +1,7 @@
 const axios = require('axios');
 const { convertCuelinks } = require('./cuelinksParser');
 
+// Official TechSelect WhatsApp Channel Link
 const TARGET_CHANNEL_LINK = 'https://whatsapp.com/channel/0029VbDdnbkG3R3e7wu0g70C';
 
 function isAmazonUrl(url) {
@@ -76,18 +77,18 @@ function stripPromotionalContent(text) {
     cleaned = cleaned.replace(/All Loots,?\s*Mobile Deals & Rate update\s*[👇👉⬇️🔗]?/gi, '');
     cleaned = cleaned.replace(/(?:Join|Follow)\s+(?:our|the|this)?\s*(?:WhatsApp|Telegram|Channel|Group|Deals)[^\n]*/gi, '');
 
-    // 3. Remove 3rd-party WhatsApp channel and group URLs
-    cleaned = cleaned.replace(/https?:\/\/(?:www\.)?whatsapp\.com\/channel\/[a-zA-Z0-9_-]+/gi, '');
-    cleaned = cleaned.replace(/https?:\/\/chat\.whatsapp\.com\/[a-zA-Z0-9_-]+/gi, '');
+    // 3. Strip ANY WhatsApp channel and group links (any channel ID, with/without https/www/params)
+    cleaned = cleaned.replace(/(?:https?:\/\/)?(?:www\.)?whatsapp\.com\/channel\/[a-zA-Z0-9_-]+(?:\?[^\s]*)?/gi, '');
+    cleaned = cleaned.replace(/(?:https?:\/\/)?(?:www\.)?chat\.whatsapp\.com\/[a-zA-Z0-9_-]+(?:\?[^\s]*)?/gi, '');
 
     // 4. Remove Telegram channel/group URLs
-    cleaned = cleaned.replace(/https?:\/\/(?:t\.me|telegram\.me|telegram\.dog)\/[a-zA-Z0-9_+.-]+/gi, '');
+    cleaned = cleaned.replace(/(?:https?:\/\/)?(?:www\.)?(?:t\.me|telegram\.me|telegram\.dog)\/[a-zA-Z0-9_+.-]+(?:\?[^\s]*)?/gi, '');
 
     // 5. Remove generic redirect shortener URLs that redirect to promotional channels
-    cleaned = cleaned.replace(/https?:\/\/(?:tinyurl\.com|bit\.ly|cutt\.ly|is\.gd|t\.co|rb\.gy|shorturl\.at|buff\.ly|ow\.ly)\/[a-zA-Z0-9_-]+/gi, '');
+    cleaned = cleaned.replace(/(?:https?:\/\/)?(?:www\.)?(?:tinyurl\.com|bit\.ly|cutt\.ly|is\.gd|t\.co|rb\.gy|shorturl\.at|buff\.ly|ow\.ly)\/[a-zA-Z0-9_-]+(?:\?[^\s]*)?/gi, '');
 
     // 6. Remove lines that only contain promotional lead labels left behind without URLs
-    cleaned = cleaned.replace(/^\s*(?:More\s+(?:loots?|deals?|offers?)|Join(?:\s+(?:us|channel|group|now))?|Telegram|WhatsApp(?:\s+channel)?|Channel|Follow\s+us)\s*[:\-–—]?\s*$/gim, '');
+    cleaned = cleaned.replace(/^\s*(?:Check\s+out|More\s+(?:loots?|deals?|offers?)|Join(?:\s+(?:other|our|the|this)?)?\s*(?:channel|group|now)?|Telegram|WhatsApp(?:\s+channel)?|Channel(?:\s+link)?|Follow(?:\s+us)?)\s*[:\-–—]?\s*$/gim, '');
 
     // 7. Clean up lines that only contain leftover emojis/punctuation (like 👇, 👉, ⬇️)
     cleaned = cleaned.replace(/^[\s👇👉⬇️🔗📌•\-–—*#:]+$/gm, '');
@@ -105,7 +106,7 @@ function stripPromotionalContent(text) {
 async function processMessageContent(body, newTag, amazonDomain, cuelinksApiKey) {
     if (!body || typeof body !== 'string') return '';
 
-    // First strip unwanted promotional texts, 3rd party channels, and redirects
+    // First strip all unwanted promotional texts, ANY whatsapp channels, and redirects
     let updatedText = stripPromotionalContent(body);
 
     const effectiveCuelinksKey = cuelinksApiKey || process.env.CUELINKS_API_KEY;
@@ -116,11 +117,6 @@ async function processMessageContent(body, newTag, amazonDomain, cuelinksApiKey)
 
     if (matches && matches.length > 0) {
         for (const link of matches) {
-            // Avoid converting our target channel link
-            if (link.includes('0029VbDdnbkG3R3e7wu0g70C')) {
-                continue;
-            }
-
             if (isAmazonUrl(link)) {
                 const convertedLink = await convertAmazonLink(link, newTag, amazonDomain);
                 updatedText = updatedText.replace(link, convertedLink);
@@ -132,12 +128,10 @@ async function processMessageContent(body, newTag, amazonDomain, cuelinksApiKey)
         }
     }
 
-    // Clean up trailing spaces and append our target channel link
+    // Clean up trailing spaces and always append TechSelect channel link at the end
     updatedText = updatedText.trim();
     if (updatedText) {
-        if (!updatedText.includes(TARGET_CHANNEL_LINK)) {
-            updatedText += `\n\n${TARGET_CHANNEL_LINK}`;
-        }
+        updatedText += `\n\n${TARGET_CHANNEL_LINK}`;
     }
 
     return updatedText;
