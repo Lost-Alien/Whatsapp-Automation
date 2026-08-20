@@ -103,13 +103,14 @@ function stripPromotionalContent(text) {
     return cleaned;
 }
 
-async function processMessageContent(body, newTag, amazonDomain, cuelinksApiKey) {
+async function processMessageContent(body, newTag, amazonDomain, cuelinksApiKey, cuelinksChannelId) {
     if (!body || typeof body !== 'string') return '';
 
     // First strip all unwanted promotional texts, ANY whatsapp channels, and redirects
     let updatedText = stripPromotionalContent(body);
 
     const effectiveCuelinksKey = cuelinksApiKey || process.env.CUELINKS_API_KEY;
+    const effectiveChannelId = cuelinksChannelId || process.env.CUELINKS_CHANNEL_ID || 311305;
 
     // Find and convert all links in the remaining text
     const urlRegex = /(https?:\/\/[^\s]+)/g;
@@ -121,8 +122,8 @@ async function processMessageContent(body, newTag, amazonDomain, cuelinksApiKey)
                 const convertedLink = await convertAmazonLink(link, newTag, amazonDomain);
                 updatedText = updatedText.replace(link, convertedLink);
             } else if (effectiveCuelinksKey) {
-                // Non-Amazon link: Convert via Cuelinks V3 API
-                const convertedLink = await convertCuelinks(link, effectiveCuelinksKey);
+                // Non-Amazon link: Convert via Cuelinks V3 API with TechSelect Channel ID (311305)
+                const convertedLink = await convertCuelinks(link, effectiveCuelinksKey, effectiveChannelId);
                 updatedText = updatedText.replace(link, convertedLink);
             }
         }
