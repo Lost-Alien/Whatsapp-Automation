@@ -37,29 +37,45 @@ function buildCuelinksFallbackUrl(targetUrl, channelId = DEFAULT_CHANNEL_ID, sub
 }
 
 /**
- * Expand store shortlinks (fkrt.it, myntr.it, etc.) to full URLs for optimal conversion.
+ * Expand store shortlinks and mobile app deep links to full canonical URLs for optimal conversion.
+ * Supports: Reliance Digital, Flipkart, Myntra, Ajio, Croma, JioMart, Vijay Sales, Shopsy, Earnkaro, etc.
  * @param {string} rawUrl 
  * @returns {Promise<string>}
  */
 async function expandNonAmazonShortUrl(rawUrl) {
-    if (!rawUrl) return rawUrl;
+    if (!rawUrl || typeof rawUrl !== 'string') return rawUrl;
     const lower = rawUrl.toLowerCase();
-    if (
+    
+    // Check if URL matches known merchant shortlinks or redirectors
+    const isShortOrAppDomain = 
         lower.includes('fkrt.it') ||
+        lower.includes('fkrt.co') ||
+        lower.includes('dl.flipkart.com') ||
         lower.includes('myntr.it') ||
         lower.includes('ajio.co') ||
+        lower.includes('croma.me') ||
+        lower.includes('r-digital.in') ||
+        lower.includes('reliancedigital.app.link') ||
+        lower.includes('jiomart.app.link') ||
         lower.includes('ern.li') ||
-        lower.includes('croma.me')
-    ) {
+        lower.includes('earnkaro.com') ||
+        lower.includes('bit.ly') ||
+        lower.includes('cutt.ly') ||
+        lower.includes('is.gd') ||
+        lower.includes('t.co') ||
+        lower.includes('rb.gy') ||
+        lower.includes('shorturl.at');
+
+    if (isShortOrAppDomain) {
         try {
             const response = await axios.get(rawUrl, {
                 maxRedirects: 5,
                 timeout: 8000,
                 headers: {
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
                 }
             });
-            return response.request?.res?.responseUrl || rawUrl;
+            return response.request?.res?.responseUrl || response.config?.url || rawUrl;
         } catch (err) {
             return rawUrl;
         }
@@ -68,7 +84,8 @@ async function expandNonAmazonShortUrl(rawUrl) {
 }
 
 /**
- * Convert any non-Amazon product URL into a Cuelinks tracked affiliate shortlink.
+ * Convert any non-Amazon product URL (Reliance Digital, Flipkart, Myntra, Ajio, TataCliq, Croma, etc.)
+ * into a Cuelinks tracked affiliate shortlink.
  * @param {string} rawUrl - Destination product/store URL.
  * @param {string} apiKey - Cuelinks V3 API token.
  * @param {number|string} [channelId] - Cuelinks Channel ID (default: 311305 for WhatsApp TechSelect).
