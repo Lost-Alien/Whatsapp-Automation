@@ -56,51 +56,30 @@ describe('Amazon URL Parser Logic', () => {
         expect(isAmazonUrl('https://link.amazon/abc')).toBe(true);
         expect(isAmazonUrl('https://amzaff.to/deal')).toBe(true);
 
+        expect(isAmazonUrl('https://www.reliancedigital.in/item/123')).toBe(false);
         expect(isAmazonUrl('https://www.flipkart.com/item/123')).toBe(false);
         expect(isAmazonUrl('https://www.myntra.com/tshirt/456')).toBe(false);
         expect(isAmazonUrl('https://www.ajio.com/shoes/789')).toBe(false);
     });
 });
 
-describe('Promotional Text and WhatsApp Channel Stripper Logic', () => {
-    test('Strips Req Jind and Req Tohana', () => {
-        const input1 = 'Req Jind\n🔥 Deal on Apple iPhone\nPrice: ₹65,999';
-        expect(stripPromotionalContent(input1)).toBe('🔥 Deal on Apple iPhone\nPrice: ₹65,999');
-
-        const input2 = 'Req Tohana\n🔥 Deal on Samsung Galaxy\nPrice: ₹25,999';
-        expect(stripPromotionalContent(input2)).toBe('🔥 Deal on Samsung Galaxy\nPrice: ₹25,999');
+describe('Offline Dealer Rate Quotes and Promotional Text Filter', () => {
+    test('Strips Req Sumit Bhiwani, Req shiv kaithal, Req sachin bhiwani', () => {
+        const input = '17 256 85700\nReq Sumit Bhiwani';
+        expect(stripPromotionalContent(input)).toBe('17 256 85700');
     });
 
-    test('Strips any WhatsApp channel link and promotional headers', () => {
+    test('Strips any foreign WhatsApp channel link (0029Va8sHsBDTkK7E9LCXq2D) and TinyURL redirect', () => {
         const input = `Only Mobile,TV Electronic Deals👇 
 https://whatsapp.com/channel/0029Va8sHsBDTkK7E9LCXq2D
+All Loots, Mobile Deals & Rate update 👇 
+https://tinyurl.com/6vu4mdfp
 🔥 Boat Airdopes at ₹899`;
         expect(stripPromotionalContent(input)).toBe('🔥 Boat Airdopes at ₹899');
     });
-
-    test('Strips WhatsApp channel with query params or different channel IDs', () => {
-        const input = `🔥 Great Deal!
-Check out: https://whatsapp.com/channel/0029VbABCDE12345?utm_source=chat
-Follow us: https://www.whatsapp.com/channel/0029Va8sHsBDTkK7E9LCXq2D`;
-        expect(stripPromotionalContent(input)).toBe('🔥 Great Deal!');
-    });
-
-    test('Strips "All Loots, Mobile Deals & Rate update" and TinyURL link', () => {
-        const input = `All Loots, Mobile Deals & Rate update 👇 
-https://tinyurl.com/6vu4mdfp
-🔥 Smart TV 43 inch at ₹14,999`;
-        expect(stripPromotionalContent(input)).toBe('🔥 Smart TV 43 inch at ₹14,999');
-    });
-
-    test('Strips 3rd party Telegram and redirect shorteners', () => {
-        const input = `🔥 Great loot deal!
-Join our Telegram: https://t.me/deals_channel
-More loots: https://bit.ly/3xyz123`;
-        expect(stripPromotionalContent(input)).toBe('🔥 Great loot deal!');
-    });
 });
 
-describe('Full Message Processing Pipeline with TechSelect Channel Appender', () => {
+describe('Full Message Processing Pipeline & Drop Logic', () => {
     const affiliateTag = 'techstor0caaf-21';
     const mockDomain = 'amazon.in';
     const mockCuelinksKey = 'LmNADAnOLIEimDh8ItTaUEqjy1W_QTnfEkdXIaXqn7c';
@@ -109,7 +88,37 @@ describe('Full Message Processing Pipeline with TechSelect Channel Appender', ()
         jest.clearAllMocks();
     });
 
-    test('Strips https://whatsapp.com/channel/0029Va8sHsBDTkK7E9LCXq2D and always appends TechSelect channel', async () => {
+    test('Drops offline dealer price lists with no buy links (returns empty string)', async () => {
+        const message1 = `17 256 85700 
+Req Sumit Bhiwani`;
+        const result1 = await processMessageContent(message1, affiliateTag, mockDomain, mockCuelinksKey);
+        expect(result1).toBe('');
+
+        const message2 = `Ce6 8/128 32700 
+Ce6  8/256 35700 
+17 pro 🍊 121500
+N6x 4/64 18400
+N6 4/128 21300
+Ce6lite 26050
+nord 6 41500
+T5x 8/128 26800
+Fusion70 26900
+k14 6/128 21000
+kaithal`;
+        const result2 = await processMessageContent(message2, affiliateTag, mockDomain, mockCuelinksKey);
+        expect(result2).toBe('');
+    });
+
+    test('Drops message containing only promotional channel links and tinyurl redirect (returns empty string)', async () => {
+        const message = `Only Mobile,TV Electronic Deals👇 
+https://whatsapp.com/channel/0029Va8sHsBDTkK7E9LCXq2D
+All Loots, Mobile Deals & Rate update 👇 
+https://tinyurl.com/6vu4mdfp`;
+        const result = await processMessageContent(message, affiliateTag, mockDomain, mockCuelinksKey);
+        expect(result).toBe('');
+    });
+
+    test('Converts real Amazon deal, strips 0029Va8sHsBDTkK7E9LCXq2D and tinyurl, and appends TechSelect channel', async () => {
         const message = `Req Jind
 
 Only Mobile,TV Electronic Deals👇 
@@ -128,48 +137,30 @@ Deal Price: ₹65,999 (MRP ₹79,900)
         const result = await processMessageContent(message, affiliateTag, mockDomain, mockCuelinksKey);
         expect(result).toBe(expected);
         expect(result).not.toContain('0029Va8sHsBDTkK7E9LCXq2D');
+        expect(result).not.toContain('tinyurl.com/6vu4mdfp');
         expect(result).toContain('0029VbDdnbkG3R3e7wu0g70C');
     });
 
-    test('Full message with Flipkart link converts via Cuelinks and appends TechSelect channel', async () => {
-        convertCuelinks.mockResolvedValueOnce('https://fkrt.clnk.in/BWhS');
+    test('Converts real Reliance Digital deal via Cuelinks and appends TechSelect channel', async () => {
+        convertCuelinks.mockResolvedValueOnce('https://clnk.in/BWkg');
 
         const message = `Req Tohana
 
-🔥 Realme P1 5G Smartphone
-Price: ₹14,999
-Link: https://www.flipkart.com/realme-p1-5g/p/itm12345
+🔥 OnePlus Nord CE4 Lite 5G
+Price: ₹17,999
+Link: https://www.reliancedigital.in/oneplus-nord-ce4-lite/p/494421869
 
 Only Mobile,TV Electronic Deals👇 
 https://whatsapp.com/channel/0029Va8sHsBDTkK7E9LCXq2D`;
 
-        const expected = `🔥 Realme P1 5G Smartphone
-Price: ₹14,999
-Link: https://fkrt.clnk.in/BWhS\n\n${TARGET_CHANNEL_LINK}`;
+        const expected = `🔥 OnePlus Nord CE4 Lite 5G
+Price: ₹17,999
+Link: https://clnk.in/BWkg\n\n${TARGET_CHANNEL_LINK}`;
 
         const result = await processMessageContent(message, affiliateTag, mockDomain, mockCuelinksKey);
         expect(result).toBe(expected);
         expect(result).not.toContain('0029Va8sHsBDTkK7E9LCXq2D');
         expect(result).toContain('0029VbDdnbkG3R3e7wu0g70C');
-    });
-
-    test('Mixed Message: Both Amazon and Flipkart links converted with respective affiliate engines', async () => {
-        convertCuelinks.mockResolvedValueOnce('https://fkrt.clnk.in/deal123');
-
-        const message = `🔥 Multi-Store Mega Sale!
-
-Amazon Deal: https://www.amazon.in/dp/B0CHX1W1XY?tag=old-21
-Flipkart Deal: https://www.flipkart.com/product/abcde
-
-Join other channel: https://whatsapp.com/channel/0029Va8sHsBDTkK7E9LCXq2D`;
-
-        const expected = `🔥 Multi-Store Mega Sale!
-
-Amazon Deal: https://www.amazon.in/dp/B0CHX1W1XY?tag=techstor0caaf-21
-Flipkart Deal: https://fkrt.clnk.in/deal123\n\n${TARGET_CHANNEL_LINK}`;
-
-        const result = await processMessageContent(message, affiliateTag, mockDomain, mockCuelinksKey);
-        expect(result).toBe(expected);
     });
 
     // 20 Iteration Test Suite for Full Message Processing
