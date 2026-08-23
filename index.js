@@ -2,7 +2,7 @@ const { Client, LocalAuth } = require('whatsapp-web.js');
 const qrcodeTerminal = require('qrcode-terminal');
 const qrcode = require('qrcode');
 const express = require('express');
-const { processMessageContent } = require('./src/amazonParser');
+const { processMessageContent } = require('./src/linkProcessor');
 require('dotenv').config();
 
 const SECONDARY_TAG = process.env.SECONDARY_STORE_ID || 'techstor0caaf-21';
@@ -126,6 +126,8 @@ function registerClientEvents() {
 
     async function handleIncomingMessage(msg) {
         if (!msg || !msg.body) return;
+        // Ignore messages sent by the bot itself to prevent forwarding loops
+        if (msg.fromMe) return;
         const msgId = msg.id?._serialized || `${msg.from}_${msg.timestamp}_${msg.body.substring(0, 20)}`;
 
         if (processedMessages.has(msgId)) return;
