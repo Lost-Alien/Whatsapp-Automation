@@ -88,20 +88,12 @@ describe('Cuelinks Link Converter & Multi-Store Engine Logic', () => {
         expect(result).toBe('https://clnk.in/BWkj');
     });
 
-    test('Converts Flipkart URL with Cuelinks short_url and channel_id 311305', async () => {
+    test('Bypasses Cuelinks API for Flipkart URLs to avoid WAF block and returns fallback URL', async () => {
         const rawUrl = 'https://www.flipkart.com/apple-iphone-15-black-128-gb/p/itm6ac6485515ae4';
-        axios.post.mockResolvedValueOnce({
-            data: {
-                data: {
-                    original_url: rawUrl,
-                    short_url: 'https://fkrt.clnk.in/BWiE',
-                    affiliate_url: 'https://linksredirect.com/?cid=311305&source=api&url=...'
-                }
-            }
-        });
 
         const result = await convertCuelinks(rawUrl, mockApiKey, DEFAULT_CHANNEL_ID);
-        expect(result).toBe('https://fkrt.clnk.in/BWiE');
+        expect(result).toBe('https://linksredirect.com/?cid=311305&subid1=wabot&source=api&url=https%3A%2F%2Fwww.flipkart.com%2Fapple-iphone-15-black-128-gb%2Fp%2Fitm6ac6485515ae4');
+        expect(axios.post).not.toHaveBeenCalledWith(CUELINKS_API_ENDPOINT, expect.any(Object), expect.any(Object));
     });
 
     test('Falls back to direct Cuelinks URL with cid=311305 on network error or timeout', async () => {
@@ -116,7 +108,6 @@ describe('Cuelinks Link Converter & Multi-Store Engine Logic', () => {
     describe('20-Iteration Reliability Tests across merchants with TechSelect CID (311305)', () => {
         const merchants = [
             { name: 'Reliance Digital', url: 'https://www.reliancedigital.in/item-', shortPrefix: 'https://clnk.in/' },
-            { name: 'Flipkart', url: 'https://www.flipkart.com/item-', shortPrefix: 'https://fkrt.clnk.in/' },
             { name: 'JioMart', url: 'https://www.jiomart.com/item-', shortPrefix: 'https://clnk.in/' },
             { name: 'Myntra', url: 'https://www.myntra.com/item-', shortPrefix: 'https://myntr.clnk.in/' },
             { name: 'Ajio', url: 'https://www.ajio.com/item-', shortPrefix: 'https://ajo.clnk.in/' },

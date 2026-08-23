@@ -101,6 +101,13 @@ async function convertCuelinks(rawUrl, apiKey, channelId = DEFAULT_CHANNEL_ID, s
     // 2. Expand known merchant shorteners if applicable
     targetUrl = await expandNonAmazonShortUrl(targetUrl);
 
+    // Bypass Cuelinks API for Flipkart because their Captcha/WAF blocks Cuelinks verification
+    // resulting in broken "Not Verified" fkrt.clnk.in shortlinks.
+    if (targetUrl.includes('flipkart.com') || targetUrl.includes('fkrt.it') || targetUrl.includes('fkrt.co')) {
+        console.log(`Bypassing Cuelinks API for Flipkart to avoid WAF block: ${targetUrl}`);
+        return buildCuelinksFallbackUrl(targetUrl, channelId, subid);
+    }
+
     // If no API key, use direct constructed Cuelinks redirect URL
     if (!apiKey) {
         return buildCuelinksFallbackUrl(targetUrl, channelId, subid);
