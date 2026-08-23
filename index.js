@@ -6,9 +6,11 @@ const { processMessageContent } = require('./src/amazonParser');
 require('dotenv').config();
 
 const SECONDARY_TAG = process.env.SECONDARY_STORE_ID || 'techstor0caaf-21';
-const SOURCE_ID = process.env.SOURCE_CHAT_ID;
-const TARGET_ID = process.env.TARGET_CHAT_ID;
+const SOURCE_IDS = (process.env.SOURCE_CHAT_ID || '').split(',').map(s => s.trim()).filter(Boolean);
+const TARGET_ID = (process.env.TARGET_CHAT_ID || '').trim();
 const AMAZON_DOMAIN = process.env.AMAZON_DOMAIN || 'amazon.in';
+const CUELINKS_API_KEY = process.env.CUELINKS_API_KEY;
+const CUELINKS_CHANNEL_ID = process.env.CUELINKS_CHANNEL_ID || 311305;
 const PORT = process.env.PORT || 3000;
 
 const app = express();
@@ -105,7 +107,7 @@ function registerClientEvents() {
         qrCodeData = null;
         pairingCode = null;
         addLog('✅ WhatsApp Web Client is Ready!');
-        addLog(`Listening for messages from ID: "${SOURCE_ID}"`);
+        addLog(`Listening for messages from: ${SOURCE_IDS.length > 0 ? SOURCE_IDS.join(', ') : 'ALL CHANNELS'}`);
         addLog(`Forwarding updated deals to ID: "${TARGET_ID}"`);
     });
 
@@ -119,26 +121,54 @@ function registerClientEvents() {
         }, 10000);
     });
 
-    // Listen for incoming messages
-    client.on('message', async (msg) => {
+    // Set to track processed messages and prevent duplicate triggers with zero rate limits
+    const processedMessages = new Set();
+
+    async function handleIncomingMessage(msg) {
+        if (!msg || !msg.body) return;
+        const msgId = msg.id?._serialized || `${msg.from}_${msg.timestamp}_${msg.body.substring(0, 20)}`;
+
+        if (processedMessages.has(msgId)) return;
+        processedMessages.add(msgId);
+        // Keep set bounded to latest 1000 messages
+        if (processedMessages.size > 1000) {
+            const firstEntry = processedMessages.values().next().value;
+            processedMessages.delete(firstEntry);
+        }
+
         try {
-            addLog(`[DEBUG] Received a message from ID: ${msg.from}`);
+            let chatName = 'Channel';
+            try {
+                const chat = await msg.getChat();
+                if (chat && chat.name) chatName = chat.name;
+            } catch (e) {}
 
-            if (SOURCE_ID && msg.from === SOURCE_ID.trim()) {
-                addLog(`New deal detected in Source Channel!`);
-                const modifiedText = await processMessageContent(msg.body, SECONDARY_TAG, AMAZON_DOMAIN);
+            addLog(`[DEBUG] Received message from "${chatName}" (ID: ${msg.from})`);
 
-                if (TARGET_ID) {
-                    await client.sendMessage(TARGET_ID.trim(), modifiedText);
+            const fromId = (msg.from || '').trim();
+            const isMatch = SOURCE_IDS.length === 0 || SOURCE_IDS.includes(fromId);
+
+            if (isMatch) {
+                addLog(`🔥 New deal detected from "${chatName}" (${fromId})! Processing immediately...`);
+                const modifiedText = await processMessageContent(msg.body, SECONDARY_TAG, AMAZON_DOMAIN, CUELINKS_API_KEY, CUELINKS_CHANNEL_ID);
+
+                if (TARGET_ID && modifiedText && modifiedText.trim().length > 0) {
+                    await client.sendMessage(TARGET_ID, modifiedText);
                     addLog(`✅ Converted deal auto-posted to Target Channel successfully!`);
-                } else {
+                } else if (!TARGET_ID) {
                     addLog(`❌ TARGET_CHAT_ID is missing in .env!`);
+                } else {
+                    addLog(`ℹ️ Message from "${chatName}" dropped (contained only offline dealer rates or promotional spam).`);
                 }
             }
         } catch (error) {
-            addLog(`❌ Error handling message: ${error.message}`);
+            addLog(`❌ Error handling deal message: ${error.message}`);
         }
-    });
+    }
+
+    // Listen for incoming messages across both standard and broadcast events (zero limits)
+    client.on('message', handleIncomingMessage);
+    client.on('message_create', handleIncomingMessage);
 }
 
 // --- EXPRESS WEB SERVER ---
@@ -247,6 +277,25 @@ app.get('/api/logs', (req, res) => {
     res.json(appLogs);
 });
 
+app.get('/api/chats', async (req, res) => {
+    try {
+        if (!client || authStatus !== 'READY') {
+            return res.status(503).json({ status: authStatus, error: 'WhatsApp client is not ready yet' });
+        }
+        const chats = await client.getChats();
+        const list = chats.map(c => ({
+            id: c.id?._serialized,
+            name: c.name || 'Unnamed',
+            isGroup: !!c.isGroup,
+            isNewsletter: !!(c.id?._serialized && c.id._serialized.endsWith('@newsletter')),
+            unreadCount: c.unreadCount || 0
+        }));
+        res.json(list);
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
 app.post('/request-code', (req, res) => {
     const phone = req.body.phone;
     if (phone) {
@@ -257,7 +306,7 @@ app.post('/request-code', (req, res) => {
     res.redirect('/');
 });
 
-app.listen(PORT, () => {
-    console.log(`🌍 Web Dashboard is running on port ${PORT}`);
+app.listen(PORT, '0.0.0.0', () => {
+    console.log(`🌍 Web Dashboard is running on http://0.0.0.0:${PORT}`);
     startClient();
 });

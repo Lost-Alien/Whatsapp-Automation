@@ -2,3 +2,8 @@ node_modules/
 .env
 .wwebjs_auth/
 .wwebjs_cache/
+*.csv
+*.pem
+*.key
+*.tar.gz
+*.log
