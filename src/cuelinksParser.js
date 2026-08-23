@@ -70,7 +70,7 @@ async function expandNonAmazonShortUrl(rawUrl) {
         try {
             const response = await axios.get(rawUrl, {
                 maxRedirects: 5,
-                timeout: 8000,
+                timeout: 5000,
                 headers: {
                     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
                 }
@@ -120,7 +120,7 @@ async function convertCuelinks(rawUrl, apiKey, channelId = DEFAULT_CHANNEL_ID, s
                     'Authorization': `Token ${apiKey}`,
                     'Content-Type': 'application/json'
                 },
-                timeout: 8000
+                timeout: 5000
             }
         );
 
