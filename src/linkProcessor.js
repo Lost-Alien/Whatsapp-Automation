@@ -169,7 +169,7 @@ async function convertViaCuelinks(rawUrl, apiKey, channelId, subid) {
     if (!channelId) channelId = DEFAULT_CHANNEL_ID;
     if (!subid) subid = 'wabot';
     if (!rawUrl) return rawUrl;
-    if (!apiKey) return buildCuelinksFallbackUrl(rawUrl, channelId, subid);
+    if (!apiKey) return rawUrl;
     try {
         const response = await axios.post(
             CUELINKS_API_ENDPOINT,
@@ -179,12 +179,12 @@ async function convertViaCuelinks(rawUrl, apiKey, channelId, subid) {
         const data = response.data && response.data.data;
         if (data) {
             return data.short_url || data.shorten_url || data.affiliate_url || data.tracking_url
-                || buildCuelinksFallbackUrl(rawUrl, channelId, subid);
+                || rawUrl;
         }
-        return buildCuelinksFallbackUrl(rawUrl, channelId, subid);
+        return rawUrl;
     } catch (err) {
         console.error('Cuelinks API error for (' + rawUrl + '): ' + err.message);
-        return buildCuelinksFallbackUrl(rawUrl, channelId, subid);
+        return rawUrl;
     }
 }
 
