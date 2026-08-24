@@ -146,13 +146,14 @@ function registerClientEvents() {
                 if (chat && chat.name) chatName = chat.name;
             } catch (e) {}
 
-            addLog(`[DEBUG] Received message from "${chatName}" (ID: ${msg.from})`);
-
             const fromId = (msg.from || '').trim();
+            const snippet = (msg.body || '').replace(/\s+/g, ' ').trim().substring(0, 70);
+            addLog(`[DEBUG] Received from "${chatName}" (${fromId}): "${snippet}..."`);
+
             const isMatch = SOURCE_IDS.length === 0 || SOURCE_IDS.includes(fromId);
 
             if (isMatch) {
-                addLog(`🔥 New deal detected from "${chatName}" (${fromId})! Processing immediately...`);
+                addLog(`🔥 New deal detected from "${chatName}"! Processing links...`);
                 const modifiedText = await processMessageContent(msg.body, SECONDARY_TAG, AMAZON_DOMAIN, CUELINKS_API_KEY, CUELINKS_CHANNEL_ID);
 
                 if (TARGET_ID && modifiedText && modifiedText.trim().length > 0) {
@@ -161,7 +162,7 @@ function registerClientEvents() {
                 } else if (!TARGET_ID) {
                     addLog(`❌ TARGET_CHAT_ID is missing in .env!`);
                 } else {
-                    addLog(`ℹ️ Message from "${chatName}" dropped (contained only offline dealer rates or promotional spam).`);
+                    addLog(`ℹ️ Message from "${chatName}" skipped (no valid store/card links found or only promo invites).`);
                 }
             }
         } catch (error) {
