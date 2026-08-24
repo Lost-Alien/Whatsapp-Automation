@@ -24,6 +24,8 @@ const MERCHANT_STRATEGIES = [
         'vijaysales.com', 'tatacliq.com', 'nykaa.com',
         'meesho.com', 'snapdeal.com',
         'earnkaro.com', 'ern.li',
+        'bitli.in', 'linkredirect.in', 'wee.bnking.in', 'g.v20.in',
+        'wishlink.com', 'openinapp.co', 'hypd.store',
     ], strategy: 'cuelinks' },
 ];
 
