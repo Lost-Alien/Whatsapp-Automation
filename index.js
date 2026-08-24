@@ -35,6 +35,10 @@ function createClient() {
     return new Client({
         authStrategy: new LocalAuth({ dataPath: './.wwebjs_auth' }),
         authTimeoutMs: 120000,
+        userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36',
+        webVersionCache: {
+            type: 'none',
+        },
         puppeteer: {
             headless: true,
             executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
