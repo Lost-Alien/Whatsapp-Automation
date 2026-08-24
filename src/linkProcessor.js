@@ -24,8 +24,12 @@ const MERCHANT_STRATEGIES = [
         'vijaysales.com', 'tatacliq.com', 'nykaa.com',
         'meesho.com', 'snapdeal.com',
         'earnkaro.com', 'ern.li',
-        'bitli.in', 'linkredirect.in', 'wee.bnking.in', 'g.v20.in',
-        'wishlink.com', 'openinapp.co', 'hypd.store',
+        'bitli.in', 'linkredirect.in', 'wee.bnking.in', 'bnking.in', 'g.v20.in', 'v20.in',
+        'wishlink.com', 'openinapp.co', 'openinapp.link', 'hypd.store',
+        'inr.deals', 'inr.li', 'paisabazaar.com', 'bankbazaar.com', 'cardinsider.com',
+        'sbicard.com', 'hdfcbank.com', 'axisbank.com', 'icicibank.com', 'kotak.com',
+        'idfcfirstbank.com', 'indusind.com', 'aubank.in', 'rblbank.com', 'yesbank.in',
+        'bobcard.co.in', 'bankofbaroda.in', 'hsbc.co.in', 'standardchartered.co.in',
     ], strategy: 'cuelinks' },
 ];
 
