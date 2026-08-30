@@ -6,6 +6,7 @@ const TARGET_CHANNEL_LINK = 'https://whatsapp.com/channel/0029VbDdnbkG3R3e7wu0g7
 const CUELINKS_API_ENDPOINT = 'https://developers.cuelinks.com/pub_api/v3/links/convert.json';
 const DEFAULT_CHANNEL_ID = 311305;
 const AMAZON_UA = 'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36';
+const COMPETITOR_REDIRECT_DOMAINS = ['linksredirect.com', 'cuelinks.com'];
 
 /**
  * Per-merchant strategy table.
@@ -159,7 +160,11 @@ function buildCuelinksFallbackUrl(targetUrl, channelId, subid) {
 
 function extractCompetitorTargetUrl(rawUrl) {
     try {
-        if (rawUrl.includes('linksredirect.com') || rawUrl.includes('cuelinks.com')) {
+        const hostname = new URL(rawUrl).hostname.toLowerCase();
+        const isCompetitorHost = COMPETITOR_REDIRECT_DOMAINS.some(
+            (domain) => hostname === domain || hostname.endsWith(`.${domain}`)
+        );
+        if (isCompetitorHost) {
             const parsed = new URL(rawUrl);
             const target = parsed.searchParams.get('url');
             if (target) return decodeURIComponent(target);

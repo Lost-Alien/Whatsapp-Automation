@@ -4,6 +4,24 @@ const { URL } = require('url');
 const CUELINKS_API_ENDPOINT = 'https://developers.cuelinks.com/pub_api/v3/links/convert.json';
 // Tech Select Mobile Deals WhatsApp Channel ID on Cuelinks
 const DEFAULT_CHANNEL_ID = 311305;
+const COMPETITOR_REDIRECT_DOMAINS = ['linksredirect.com', 'cuelinks.com'];
+const SHORT_OR_APP_DOMAINS = [
+    'fkrt.it', 'fkrt.co', 'dl.flipkart.com',
+    'myntr.it', 'ajio.co', 'croma.me',
+    'r-digital.in', 'reliancedigital.app.link', 'jiomart.app.link',
+    'ern.li', 'earnkaro.com',
+    'bit.ly', 'cutt.ly', 'is.gd', 't.co', 'rb.gy', 'shorturl.at'
+];
+const FLIPKART_DOMAINS = ['flipkart.com', 'fkrt.it', 'fkrt.co'];
+
+function hasAllowedHost(rawUrl, allowedDomains) {
+    try {
+        const hostname = new URL(rawUrl).hostname.toLowerCase();
+        return allowedDomains.some((domain) => hostname === domain || hostname.endsWith(`.${domain}`));
+    } catch (_) {
+        return false;
+    }
+}
 
 /**
  * Extract target URL if an incoming URL is already a Cuelinks redirect (e.g. from competitor).
@@ -13,7 +31,7 @@ const DEFAULT_CHANNEL_ID = 311305;
 function extractTargetUrl(rawUrl) {
     if (!rawUrl || typeof rawUrl !== 'string') return rawUrl;
     try {
-        if (rawUrl.includes('linksredirect.com') || rawUrl.includes('cuelinks.com')) {
+        if (hasAllowedHost(rawUrl, COMPETITOR_REDIRECT_DOMAINS)) {
             const parsed = new URL(rawUrl);
             const target = parsed.searchParams.get('url');
             if (target) return decodeURIComponent(target);
@@ -44,27 +62,9 @@ function buildCuelinksFallbackUrl(targetUrl, channelId = DEFAULT_CHANNEL_ID, sub
  */
 async function expandNonAmazonShortUrl(rawUrl) {
     if (!rawUrl || typeof rawUrl !== 'string') return rawUrl;
-    const lower = rawUrl.toLowerCase();
     
     // Check if URL matches known merchant shortlinks or redirectors
-    const isShortOrAppDomain = 
-        lower.includes('fkrt.it') ||
-        lower.includes('fkrt.co') ||
-        lower.includes('dl.flipkart.com') ||
-        lower.includes('myntr.it') ||
-        lower.includes('ajio.co') ||
-        lower.includes('croma.me') ||
-        lower.includes('r-digital.in') ||
-        lower.includes('reliancedigital.app.link') ||
-        lower.includes('jiomart.app.link') ||
-        lower.includes('ern.li') ||
-        lower.includes('earnkaro.com') ||
-        lower.includes('bit.ly') ||
-        lower.includes('cutt.ly') ||
-        lower.includes('is.gd') ||
-        lower.includes('t.co') ||
-        lower.includes('rb.gy') ||
-        lower.includes('shorturl.at');
+    const isShortOrAppDomain = hasAllowedHost(rawUrl, SHORT_OR_APP_DOMAINS);
 
     if (isShortOrAppDomain) {
         try {
@@ -103,7 +103,7 @@ async function convertCuelinks(rawUrl, apiKey, channelId = DEFAULT_CHANNEL_ID, s
 
     // Bypass Cuelinks API for Flipkart because their Captcha/WAF blocks Cuelinks verification
     // resulting in broken "Not Verified" fkrt.clnk.in shortlinks.
-    if (targetUrl.includes('flipkart.com') || targetUrl.includes('fkrt.it') || targetUrl.includes('fkrt.co')) {
+    if (hasAllowedHost(targetUrl, FLIPKART_DOMAINS)) {
         console.log(`Bypassing Cuelinks API for Flipkart to avoid WAF block: ${targetUrl}`);
         return buildCuelinksFallbackUrl(targetUrl, channelId, subid);
     }
