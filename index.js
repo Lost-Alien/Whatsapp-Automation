@@ -19,9 +19,9 @@ app.use(express.json());
 
 const appLogs = [];
 function addLog(message) {
-    const time = new Date().toLocaleTimeString();
+    const time = new Date().toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour12: true });
     console.log(message);
-    appLogs.push(`[${time}] ${message}`);
+    appLogs.push(`[${time} IST] ${message}`);
     if (appLogs.length > 100) appLogs.shift();
 }
 
@@ -206,6 +206,7 @@ app.get('/', (req, res) => {
     <body>
         <div class="card">
             <h1>🤖 WA Affiliate Bot</h1>
+            <div style="font-size: 13px; color: #555; margin-bottom: 15px; font-weight: 500;">🕒 Server Time (IST): <span>${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'medium', timeStyle: 'medium' })}</span></div>
     `;
 
     if (authStatus === 'READY') {
