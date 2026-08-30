@@ -13,7 +13,7 @@ const AMAZON_UA = 'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (
  */
 const MERCHANT_STRATEGIES = [
     { domains: ['amazon.in', 'amazon.com', 'amzn.to', 'amzn.eu', 'link.amazon', 'amzaff.to'], strategy: 'amazon' },
-    { domains: ['flipkart.com', 'dl.flipkart.com', 'fkrt.it', 'fkrt.co', 'shopsy.in'], strategy: 'flipkart' },
+    { domains: ['flipkart.com', 'dl.flipkart.com', 'fkrt.it', 'fkrt.co', 'bilty.co', 'shopsy.in'], strategy: 'flipkart' },
     { domains: ['linksredirect.com', 'cuelinks.com'], strategy: 'competitor' },
     { domains: [
         'reliancedigital.in', 'r-digital.in', 'reliancedigital.app.link',
@@ -264,12 +264,16 @@ async function processMessageContent(body, newTag, amazonDomain, cuelinksApiKey,
         if (result.status === 'fulfilled') {
             const orig = result.value.original;
             const conv = result.value.converted;
+            const strategy = detectStrategy(orig);
+            // Mark as valid if link belongs to any known merchant domain,
+            // regardless of whether conversion changed the URL (handles Cuelinks
+            // API returning the same URL for credit-card / unsupported merchants).
+            if (strategy !== null) {
+                hasValidStoreLink = true;
+            }
             if (orig !== conv) {
                 const esc = orig.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&');
                 updatedText = updatedText.replace(new RegExp(esc, 'g'), conv);
-                hasValidStoreLink = true;
-            } else if (detectStrategy(orig) !== null) {
-                hasValidStoreLink = true;
             }
         } else {
             console.error('Link processing failed: ' + result.reason);
