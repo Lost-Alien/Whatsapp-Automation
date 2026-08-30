@@ -4,6 +4,16 @@ const { sanitizeAmazonUrl } = require('./urlSanitizer');
 
 // Target TechSelect WhatsApp Channel Link
 const TARGET_CHANNEL_LINK = 'https://whatsapp.com/channel/0029VbDdnbkG3R3e7wu0g70C';
+const AMAZON_DOMAINS = ['amazon.in', 'amazon.com', 'amzn.to', 'amzn.eu', 'link.amazon', 'amzaff.to'];
+
+function hasAllowedHost(rawUrl, allowedDomains) {
+    try {
+        const hostname = new URL(rawUrl).hostname.toLowerCase();
+        return allowedDomains.some((domain) => hostname === domain || hostname.endsWith(`.${domain}`));
+    } catch (_) {
+        return false;
+    }
+}
 
 /**
  * Checks if a given URL is an Amazon product or short link.
@@ -12,15 +22,7 @@ const TARGET_CHANNEL_LINK = 'https://whatsapp.com/channel/0029VbDdnbkG3R3e7wu0g7
  */
 function isAmazonUrl(rawUrl) {
     if (!rawUrl || typeof rawUrl !== 'string') return false;
-    const lower = rawUrl.toLowerCase();
-    return (
-        lower.includes('amazon.in') ||
-        lower.includes('amazon.com') ||
-        lower.includes('amzn.to') ||
-        lower.includes('amzn.eu') ||
-        lower.includes('link.amazon') ||
-        lower.includes('amzaff.to')
-    );
+    return hasAllowedHost(rawUrl, AMAZON_DOMAINS);
 }
 
 /**
