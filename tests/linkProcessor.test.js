@@ -304,9 +304,17 @@ describe('stripPromotionalContent()', () => {
 describe('processMessageContent() — full pipeline', () => {
     const opts = [AFFILIATE_TAG, AMAZON_DOMAIN, CUELINKS_API_KEY, CHANNEL_ID];
 
-    test('drops offline dealer price list (no URLs)', async () => {
+    // NOTE: Since the "forward all meaningful content" update, text-only price lists
+    // are now forwarded (with channel link appended) instead of being dropped.
+    // Only messages that are entirely promo/invite links OR too short get dropped.
+    test('forwards offline dealer price list text (meaningful content > 15 chars)', async () => {
         const msg = '17 256 85700\nCe6 8/128 32700\nReq Sumit Bhiwani';
-        expect(await processMessageContent(msg, ...opts)).toBe('');
+        const result = await processMessageContent(msg, ...opts);
+        // 'Req Sumit Bhiwani' is stripped, but '17 256 85700\nCe6 8/128 32700' remains and is forwarded
+        expect(result).toContain('17 256 85700');
+        expect(result).toContain('Ce6 8/128 32700');
+        expect(result).not.toContain('Req Sumit Bhiwani');
+        expect(result).toContain(TARGET_CHANNEL_LINK);
     });
 
     test('drops message containing only promo WhatsApp channel link + tinyurl', async () => {
