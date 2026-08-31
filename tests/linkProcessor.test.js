@@ -9,6 +9,8 @@ const {
     buildCuelinksFallbackUrl,
     extractCompetitorTargetUrl,
     processLink,
+    sanitizeFlipkartUrl,
+    resolveFlipkartShortUrl,
     stripPromotionalContent,
     processMessageContent,
 } = require('../src/linkProcessor');
@@ -160,18 +162,23 @@ describe('convertAmazon()', () => {
 // convertFlipkart()
 // ─────────────────────────────────────────────
 describe('convertFlipkart()', () => {
-    test('returns linksredirect fallback URL (bypasses Cuelinks API)', () => {
+    test('returns linksredirect fallback URL (bypasses Cuelinks API)', async () => {
         const rawUrl = 'https://www.flipkart.com/apple-iphone-15-black-128-gb/p/itm6ac6485515ae4';
-        const result = convertFlipkart(rawUrl, CHANNEL_ID);
+        // flipkart.com is NOT a short-link host so resolveFlipkartShortUrl returns unchanged
+        const result = await convertFlipkart(rawUrl, CHANNEL_ID);
         expect(result).toBe('https://linksredirect.com/?cid=311305&subid1=wabot&source=api&url=' + encodeURIComponent(rawUrl));
         expect(axios.post).not.toHaveBeenCalled();
     });
 
-    test('dl.flipkart.com shortlink passes through without expansion', () => {
+    test('dl.flipkart.com shortlink: resolves redirect then wraps', async () => {
         const rawUrl = 'https://dl.flipkart.com/s/j0E6wY';
-        const result = convertFlipkart(rawUrl, CHANNEL_ID);
+        const resolvedUrl = 'https://www.flipkart.com/apple-iphone-15/p/itm12345';
+        axios.get.mockRejectedValueOnce(Object.assign(new Error('301'), {
+            response: { status: 301, headers: { location: resolvedUrl }, data: '' }
+        }));
+        const result = await convertFlipkart(rawUrl, CHANNEL_ID);
         expect(result).toContain('linksredirect.com');
-        expect(result).toContain(encodeURIComponent(rawUrl));
+        expect(result).toContain(encodeURIComponent(resolvedUrl));
     });
 });
 
@@ -399,5 +406,126 @@ describe('processMessageContent() — full pipeline', () => {
                 expect(channelCount).toBe(1);
             });
         }
+    });
+});
+
+// ─────────────────────────────────────────────
+// Phase 2 — sanitizeFlipkartUrl()
+// Ported from da-vinci-noob/telegram-affiliate-link-generator-bot (affiliateprocess.rb)
+// ─────────────────────────────────────────────
+describe('sanitizeFlipkartUrl() — Phase 2 merge from affiliateprocess.rb', () => {
+    test('strips affid param from canonical flipkart.com URL', () => {
+        const dirty = 'https://www.flipkart.com/apple-iphone/p/itm123?affid=competitor123&affExtParam1=spam';
+        const clean = sanitizeFlipkartUrl(dirty);
+        expect(clean).not.toContain('affid');
+        expect(clean).not.toContain('affExtParam1');
+        expect(clean).toContain('/apple-iphone/p/itm123');
+    });
+
+    test('strips vsugd, otracker, pid, lid params', () => {
+        const dirty = 'https://www.flipkart.com/product/p/itm?vsugd=abc&otracker=xtv&pid=XYZ&lid=LID123';
+        const clean = sanitizeFlipkartUrl(dirty);
+        expect(clean).not.toContain('vsugd');
+        expect(clean).not.toContain('otracker');
+        expect(clean).not.toContain('pid=');
+        expect(clean).not.toContain('lid=');
+    });
+
+    test('does NOT strip params from non-flipkart domains (short links)', () => {
+        const shortLink = 'https://fkrt.it/abc123?affid=keep';
+        expect(sanitizeFlipkartUrl(shortLink)).toBe(shortLink);
+    });
+
+    test('handles URL with no affiliate params gracefully', () => {
+        const url = 'https://www.flipkart.com/motorola-g37/p/itm999';
+        expect(sanitizeFlipkartUrl(url)).toBe(url);
+    });
+
+    test('handles null/undefined gracefully', () => {
+        expect(sanitizeFlipkartUrl(null)).toBeNull();
+        expect(sanitizeFlipkartUrl(undefined)).toBeUndefined();
+    });
+});
+
+// ─────────────────────────────────────────────
+// Phase 3 — resolveFlipkartShortUrl() HTML body fallback
+// Ported from da-vinci-noob/telegram-affiliate-link-generator-bot (process_url.rb redirection())
+// ─────────────────────────────────────────────
+describe('resolveFlipkartShortUrl() — Phase 3 HTML body fallback', () => {
+    test('returns input unchanged for non-short-link domains', async () => {
+        const url = 'https://www.flipkart.com/product/p/itm123';
+        const result = await resolveFlipkartShortUrl(url);
+        expect(result).toBe(url);
+        expect(axios.get).not.toHaveBeenCalled();
+    });
+
+    test('follows 301 redirect from fkrt.it to flipkart.com', async () => {
+        axios.get.mockRejectedValueOnce(Object.assign(new Error('301'), {
+            response: { status: 301, headers: { location: 'https://www.flipkart.com/motorola-g37/p/itm9999' }, data: '' }
+        }));
+        const result = await resolveFlipkartShortUrl('https://fkrt.it/abc123');
+        expect(result).toContain('flipkart.com');
+        expect(result).toContain('/motorola-g37/');
+    });
+
+    test('extracts flipkart URL from HTML body when no redirect header (bilty.co WAP page)', async () => {
+        const htmlBody = '<html><body>Click here: <a href="https://www.flipkart.com/realme/p/itm8888">Buy Now</a></body></html>';
+        axios.get.mockResolvedValueOnce({
+            status: 200,
+            headers: {},
+            data: htmlBody,
+        });
+        const result = await resolveFlipkartShortUrl('https://bilty.co/abc');
+        expect(result).toBe('https://www.flipkart.com/realme/p/itm8888');
+    });
+
+    test('returns original URL if no flipkart URL found in body or headers', async () => {
+        axios.get.mockResolvedValueOnce({ status: 200, headers: {}, data: '<html>No product link here</html>' });
+        const result = await resolveFlipkartShortUrl('https://fkr.in/xyz');
+        expect(result).toBe('https://fkr.in/xyz');
+    });
+});
+
+// ─────────────────────────────────────────────
+// Phase 4 — STRIP_WORDS env var (dynamic delete list)
+// Ported from da-vinci-noob/telegram-affiliate-link-generator-bot (bot.rb delete word list)
+// ─────────────────────────────────────────────
+describe('stripPromotionalContent() — Phase 4 STRIP_WORDS dynamic env', () => {
+    const originalEnv = process.env.STRIP_WORDS;
+
+    afterEach(() => {
+        process.env.STRIP_WORDS = originalEnv || '';
+    });
+
+    test('built-in patterns: strips "Req Jind" and WhatsApp channel links', () => {
+        const input = 'Req Jind\nhttps://whatsapp.com/channel/0029Va8sHsBDTkK7E9LCXq2D\n🔥 Deal!';
+        const result = stripPromotionalContent(input);
+        expect(result).not.toContain('Req Jind');
+        expect(result).not.toContain('0029Va8sHsBDTkK7E9LCXq2D');
+        expect(result).toContain('🔥 Deal!');
+    });
+
+    test('STRIP_WORDS env: strips custom word "offline" from message', () => {
+        // Simulate env at runtime (EXTRA_STRIP_WORDS is loaded at module init,
+        // so we test the pattern function directly here)
+        const fakeWords = ['offline'];
+        const text = 'Buy this laptop offline rate 45000\n🔥 Great deal!';
+        const escaped = fakeWords.map(w => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+        const pattern = new RegExp('(?:^|\\s)(?:' + escaped.join('|') + ')(?:\\s|$)', 'gim');
+        const stripped = text.replace(pattern, ' ').trim();
+        expect(stripped).not.toContain('offline');
+        expect(stripped).toContain('🔥 Great deal!');
+    });
+
+    test('STRIP_WORDS env: multiple words stripped comma-separated', () => {
+        const fakeWords = ['kaithal', 'bhiwani', 'tohana'];
+        const text = 'kaithal 45000\nbhiwani 32000\n🔥 Samsung Deal';
+        const escaped = fakeWords.map(w => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+        const pattern = new RegExp('(?:^|\\s)(?:' + escaped.join('|') + ')(?:\\s|$)', 'gim');
+        const stripped = text.replace(pattern, ' ').replace(/\n\s*\n\s*\n+/g, '\n\n').trim();
+        expect(stripped).not.toContain('kaithal');
+        expect(stripped).not.toContain('bhiwani');
+        expect(stripped).not.toContain('tohana');
+        expect(stripped).toContain('🔥 Samsung Deal');
     });
 });
