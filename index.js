@@ -158,11 +158,11 @@ function registerClientEvents() {
 
                 if (TARGET_ID && modifiedText && modifiedText.trim().length > 0) {
                     await client.sendMessage(TARGET_ID, modifiedText);
-                    addLog(`✅ Converted deal auto-posted to Target Channel successfully!`);
+                    addLog(`✅ Deal forwarded to Target Channel successfully!`);
                 } else if (!TARGET_ID) {
                     addLog(`❌ TARGET_CHAT_ID is missing in .env!`);
                 } else {
-                    addLog(`ℹ️ Message from "${chatName}" skipped (no valid store/card links found or only promo invites).`);
+                    addLog(`ℹ️ Message from "${chatName}" skipped — no meaningful text left after stripping promo/invite links.`);
                 }
             }
         } catch (error) {

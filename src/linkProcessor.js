@@ -169,6 +169,32 @@ function extractCompetitorTargetUrl(rawUrl) {
 }
 
 /**
+ * Unwrap common deep-link redirectors (openinapp.co, openinapp.link, earnkaro, etc.)
+ * that embed the real merchant URL in a query param.
+ * Returns the underlying URL if found, else the original.
+ */
+function unwrapDeepLink(rawUrl) {
+    const DEEP_LINK_PARAMS = ['url', 'link', 'target', 'dest', 'redirect', 'u', 'to', 'ref'];
+    try {
+        const parsed = new URL(rawUrl);
+        const h = parsed.hostname.toLowerCase();
+        const deepLinkHosts = [
+            'openinapp.co', 'openinapp.link', 'earnkaro.com', 'ern.li',
+            'bitli.in', 'linkredirect.in', 'wishlink.com', 'hypd.store',
+            'inr.deals', 'inr.li', 'g.v20.in', 'v20.in', 'wee.bnking.in', 'bnking.in',
+        ];
+        if (!deepLinkHosts.some(d => h.includes(d))) return rawUrl;
+        for (const param of DEEP_LINK_PARAMS) {
+            const val = parsed.searchParams.get(param);
+            if (val && (val.startsWith('http://') || val.startsWith('https://'))) {
+                return decodeURIComponent(val);
+            }
+        }
+    } catch (_) {}
+    return rawUrl;
+}
+
+/**
  * Convert via Cuelinks API. Flipkart excluded — handled by convertFlipkart().
  */
 async function convertViaCuelinks(rawUrl, apiKey, channelId, subid) {
@@ -241,56 +267,61 @@ function stripPromotionalContent(text) {
     return c.trim();
 }
 
+/**
+ * Minimum meaningful text length after stripping — prevents forwarding near-empty messages.
+ */
+const MIN_CONTENT_LENGTH = 15;
+
 async function processMessageContent(body, newTag, amazonDomain, cuelinksApiKey, cuelinksChannelId) {
     if (!body || typeof body !== 'string') return '';
-    const rawUrls = body.match(/(https?:\/\/[^\s]+)/g);
-    if (!rawUrls || rawUrls.length === 0) return '';
 
+    // Step 1: Strip ALL competitor channel/group invite links and promo noise
     let updatedText = stripPromotionalContent(body);
-    const remainingUrls = updatedText.match(/(https?:\/\/[^\s]+)/g);
-    if (!remainingUrls || remainingUrls.length === 0) return '';
+
+    // Step 2: Bail early if no meaningful content remains
+    if (!updatedText || updatedText.trim().length < MIN_CONTENT_LENGTH) return '';
 
     const apiKey = cuelinksApiKey || process.env.CUELINKS_API_KEY;
     const channelId = cuelinksChannelId || process.env.CUELINKS_CHANNEL_ID || DEFAULT_CHANNEL_ID;
     const opts = { newTag, amazonDomain, apiKey, channelId };
 
-    const results = await Promise.allSettled(remainingUrls.map(async (link) => {
-        const converted = await processLink(link, opts);
-        return { original: link, converted: converted };
-    }));
+    // Step 3: Convert any affiliate-eligible links found in the cleaned text
+    const remainingUrls = updatedText.match(/(https?:\/\/[^\s]+)/g);
+    if (remainingUrls && remainingUrls.length > 0) {
+        const results = await Promise.allSettled(remainingUrls.map(async (link) => {
+            // Try to unwrap deep-link redirectors before strategy detection
+            const unwrapped = unwrapDeepLink(link);
+            const effectiveLink = unwrapped !== link ? unwrapped : link;
+            const converted = await processLink(effectiveLink, opts);
+            return { original: link, converted };
+        }));
 
-    let hasValidStoreLink = false;
-    for (const result of results) {
-        if (result.status === 'fulfilled') {
-            const orig = result.value.original;
-            const conv = result.value.converted;
-            const strategy = detectStrategy(orig);
-            // Mark as valid if link belongs to any known merchant domain,
-            // regardless of whether conversion changed the URL (handles Cuelinks
-            // API returning the same URL for credit-card / unsupported merchants).
-            if (strategy !== null) {
-                hasValidStoreLink = true;
+        for (const result of results) {
+            if (result.status === 'fulfilled') {
+                const { original: orig, converted: conv } = result.value;
+                if (orig !== conv) {
+                    const esc = orig.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&');
+                    updatedText = updatedText.replace(new RegExp(esc, 'g'), conv);
+                }
+            } else {
+                console.error('Link processing failed: ' + result.reason);
             }
-            if (orig !== conv) {
-                const esc = orig.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&');
-                updatedText = updatedText.replace(new RegExp(esc, 'g'), conv);
-            }
-        } else {
-            console.error('Link processing failed: ' + result.reason);
-            hasValidStoreLink = true;
         }
     }
 
-    if (!hasValidStoreLink) return '';
+    // Step 4: Final clean-up pass and always append our channel link
     updatedText = stripPromotionalContent(updatedText).trim();
-    if (updatedText) updatedText += '\n\n' + TARGET_CHANNEL_LINK;
+    if (!updatedText || updatedText.length < MIN_CONTENT_LENGTH) return '';
+
+    updatedText += '\n\n' + TARGET_CHANNEL_LINK;
     return updatedText;
 }
 
 module.exports = {
     TARGET_CHANNEL_LINK, CUELINKS_API_ENDPOINT, DEFAULT_CHANNEL_ID,
-    MERCHANT_STRATEGIES,
+    MERCHANT_STRATEGIES, MIN_CONTENT_LENGTH,
     detectStrategy, extractAsin, extractLinkAmazonPathAsin, resolveAmazonShortUrl,
     convertAmazon, convertFlipkart, convertViaCuelinks, buildCuelinksFallbackUrl,
-    extractCompetitorTargetUrl, processLink, stripPromotionalContent, processMessageContent,
+    extractCompetitorTargetUrl, unwrapDeepLink, processLink,
+    stripPromotionalContent, processMessageContent,
 };
