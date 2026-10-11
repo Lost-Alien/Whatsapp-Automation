@@ -1,4 +1,4 @@
-﻿const { Client, LocalAuth } = require('whatsapp-web.js');
+const { Client, LocalAuth } = require('whatsapp-web.js');
 const qrcodeTerminal = require('qrcode-terminal');
 const qrcode = require('qrcode');
 const express = require('express');
@@ -121,7 +121,15 @@ function registerClientEvents() {
             if (!isMatch) return;
             botStats.dealsScanned++;
             addLog('New deal from "' + chatName + '"! Processing...');
-            const modifiedText = await processMessageContent(msg.body, SECONDARY_TAG, AMAZON_DOMAIN, CUELINKS_API_KEY, CUELINKS_CHANNEL_ID);
+            let modifiedText = await processMessageContent(msg.body, SECONDARY_TAG, AMAZON_DOMAIN, CUELINKS_API_KEY, CUELINKS_CHANNEL_ID);
+
+            // Failsafe: If original message has a Flipkart link, NEVER skip it!
+            const hasFk = /(?:flipkart\.com|shopsy\.in|fkrt\.(?:it|co|in|cc|to|link|me)|fkr\.(?:in|co|cc|to|it)|bilty\.(?:co|in)|dl\.flipkart\.com)/i.test(msg.body);
+            if (hasFk && (!modifiedText || modifiedText.trim().length === 0)) {
+                addLog('Flipkart deal recovered by failsafe handler for "' + chatName + '"');
+                modifiedText = msg.body.trim() + '\n\n' + 'https://whatsapp.com/channel/0029VbDdnbkG3R3e7wu0g70C';
+            }
+
             if (TARGET_ID && modifiedText && modifiedText.trim().length > 0) {
                 await client.sendMessage(TARGET_ID, modifiedText);
                 botStats.dealsConverted++;

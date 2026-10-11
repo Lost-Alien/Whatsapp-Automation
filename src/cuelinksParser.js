@@ -5,6 +5,24 @@ const CUELINKS_API_ENDPOINT = 'https://developers.cuelinks.com/pub_api/v3/links/
 // Tech Select Mobile Deals WhatsApp Channel ID on Cuelinks
 const DEFAULT_CHANNEL_ID = 311305;
 
+const FLIPKART_BYPASS_DOMAINS = [
+    'flipkart.com', 'dl.flipkart.com',
+    'fkrt.it', 'fkrt.co', 'fkrt.in', 'fkrt.cc', 'fkrt.to', 'fkrt.link', 'fkrt.me',
+    'fkr.in', 'fkr.co', 'fkr.cc', 'fkr.to', 'fkr.it',
+    'bilty.co', 'bilty.in',
+];
+
+function isFlipkartBypassUrl(rawUrl) {
+    if (!rawUrl || typeof rawUrl !== 'string') return false;
+    let hostname;
+    try {
+        hostname = new URL(rawUrl).hostname.toLowerCase();
+    } catch (_) {
+        hostname = rawUrl.toLowerCase();
+    }
+    return FLIPKART_BYPASS_DOMAINS.some(d => hostname.includes(d));
+}
+
 /**
  * Extract target URL if an incoming URL is already a Cuelinks redirect (e.g. from competitor).
  * @param {string} rawUrl 
@@ -50,8 +68,16 @@ async function expandNonAmazonShortUrl(rawUrl) {
     const isShortOrAppDomain = 
         lower.includes('fkrt.it') ||
         lower.includes('fkrt.co') ||
+        lower.includes('fkrt.in') ||
+        lower.includes('fkrt.cc') ||
+        lower.includes('fkrt.to') ||
+        lower.includes('fkr.in') ||
+        lower.includes('fkr.co') ||
+        lower.includes('bilty.co') ||
+        lower.includes('bilty.in') ||
         lower.includes('dl.flipkart.com') ||
         lower.includes('myntr.it') ||
+        lower.includes('myntr.in') ||
         lower.includes('ajio.co') ||
         lower.includes('croma.me') ||
         lower.includes('r-digital.in') ||
@@ -103,7 +129,7 @@ async function convertCuelinks(rawUrl, apiKey, channelId = DEFAULT_CHANNEL_ID, s
 
     // Bypass Cuelinks API for Flipkart because their Captcha/WAF blocks Cuelinks verification
     // resulting in broken "Not Verified" fkrt.clnk.in shortlinks.
-    if (targetUrl.includes('flipkart.com') || targetUrl.includes('fkrt.it') || targetUrl.includes('fkrt.co')) {
+    if (isFlipkartBypassUrl(targetUrl) || targetUrl.includes('flipkart.com') || targetUrl.includes('fkrt.it') || targetUrl.includes('fkrt.co')) {
         console.log(`Bypassing Cuelinks API for Flipkart to avoid WAF block: ${targetUrl}`);
         return buildCuelinksFallbackUrl(targetUrl, channelId, subid);
     }
@@ -137,7 +163,7 @@ async function convertCuelinks(rawUrl, apiKey, channelId = DEFAULT_CHANNEL_ID, s
         }
         return buildCuelinksFallbackUrl(targetUrl, channelId, subid);
     } catch (err) {
-        console.error(`⚠️ Cuelinks API failed for (${targetUrl}), falling back to direct redirect URL:`, err.message);
+        console.error(`Cuelinks API failed for (${targetUrl}), falling back to direct redirect URL:`, err.message);
         // Resilient fallback to direct Cuelinks redirect URL
         return buildCuelinksFallbackUrl(targetUrl, channelId, subid);
     }
@@ -146,6 +172,8 @@ async function convertCuelinks(rawUrl, apiKey, channelId = DEFAULT_CHANNEL_ID, s
 module.exports = {
     CUELINKS_API_ENDPOINT,
     DEFAULT_CHANNEL_ID,
+    FLIPKART_BYPASS_DOMAINS,
+    isFlipkartBypassUrl,
     extractTargetUrl,
     buildCuelinksFallbackUrl,
     expandNonAmazonShortUrl,

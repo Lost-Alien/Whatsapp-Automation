@@ -7,21 +7,26 @@ const CUELINKS_API_ENDPOINT = 'https://developers.cuelinks.com/pub_api/v3/links/
 const DEFAULT_CHANNEL_ID = 311305;
 const AMAZON_UA = 'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36';
 
+const FLIPKART_DOMAINS = [
+    'flipkart.com', 'dl.flipkart.com', 'shopsy.in',
+    'fkrt.it', 'fkrt.co', 'fkrt.in', 'fkrt.cc', 'fkrt.to', 'fkrt.link', 'fkrt.me',
+    'fkr.in', 'fkr.co', 'fkr.cc', 'fkr.to', 'fkr.it',
+    'bilty.co', 'bilty.in',
+];
+
+const FK_SHORT_HOSTS = [
+    'fkrt.it', 'fkrt.co', 'fkrt.in', 'fkrt.cc', 'fkrt.to', 'fkrt.link', 'fkrt.me',
+    'fkr.in', 'fkr.co', 'fkr.cc', 'fkr.to', 'fkr.it',
+    'bilty.co', 'bilty.in', 'dl.flipkart.com'
+];
+
 /**
  * Per-merchant strategy table.
  * strategy: 'amazon' | 'flipkart' | 'cuelinks' | 'competitor'
  */
 const MERCHANT_STRATEGIES = [
     { domains: ['amazon.in', 'amazon.com', 'amzn.to', 'amzn.eu', 'link.amazon', 'amzaff.to'], strategy: 'amazon' },
-    // Flipkart + all known WAP short-link domains (2024–2026)
-    // Source: community research - fkrt.it, bilty.co, dl.flipkart.com are confirmed redirect chains
-    // fkr.in, fkr.co, fkrt.in are newer WAP shortener variants observed in affiliate channels
-    { domains: [
-        'flipkart.com', 'dl.flipkart.com', 'shopsy.in',
-        'fkrt.it', 'fkrt.co', 'fkrt.in',
-        'fkr.in', 'fkr.co',
-        'bilty.co', 'bilty.in',
-    ], strategy: 'flipkart' },
+    { domains: FLIPKART_DOMAINS, strategy: 'flipkart' },
     { domains: ['linksredirect.com', 'cuelinks.com'], strategy: 'competitor' },
     { domains: [
         'reliancedigital.in', 'r-digital.in', 'reliancedigital.app.link',
@@ -41,15 +46,42 @@ const MERCHANT_STRATEGIES = [
     ], strategy: 'cuelinks' },
 ];
 
-function detectStrategy(rawUrl) {
-    if (!rawUrl || typeof rawUrl !== 'string') return null;
-    // Match against hostname only to avoid false positives from encoded URLs in query params
+function isFlipkartUrl(rawUrl) {
+    if (!rawUrl || typeof rawUrl !== 'string') return false;
     let hostname;
     try {
         hostname = new URL(rawUrl).hostname.toLowerCase();
     } catch (_) {
         hostname = rawUrl.toLowerCase();
     }
+    return FLIPKART_DOMAINS.some(d => hostname.includes(d));
+}
+
+function hasFlipkartLink(text) {
+    if (!text || typeof text !== 'string') return false;
+    return /https?:\/\/(?:[a-zA-Z0-9-]+\.)*(?:flipkart\.com|shopsy\.in|fkrt\.(?:it|co|in|cc|to|link|me)|fkr\.(?:in|co|cc|to|it)|bilty\.(?:co|in)|dl\.flipkart\.com)/i.test(text);
+}
+
+function extractFlipkartLinks(text) {
+    if (!text || typeof text !== 'string') return [];
+    const matches = text.match(/https?:\/\/(?:[a-zA-Z0-9-]+\.)*(?:flipkart\.com|shopsy\.in|fkrt\.(?:it|co|in|cc|to|link|me)|fkr\.(?:in|co|cc|to|it)|bilty\.(?:co|in)|dl\.flipkart\.com)[^\s]*/gi);
+    return matches || [];
+}
+
+function cleanTrailingPunctuation(url) {
+    if (!url || typeof url !== 'string') return url;
+    return url.replace(/[.,;:!?)\]*>]+$/, '');
+}
+
+function detectStrategy(rawUrl) {
+    if (!rawUrl || typeof rawUrl !== 'string') return null;
+    let hostname;
+    try {
+        hostname = new URL(rawUrl).hostname.toLowerCase();
+    } catch (_) {
+        hostname = rawUrl.toLowerCase();
+    }
+    if (isFlipkartUrl(rawUrl)) return 'flipkart';
     for (const entry of MERCHANT_STRATEGIES) {
         if (entry.domains.some(d => hostname.includes(d))) return entry.strategy;
     }
@@ -63,7 +95,7 @@ function extractAsin(url) {
 }
 
 /**
- * For link.amazon/XXXXXXXXXX — extract ASIN from path only if it is exactly 10 chars.
+ * For link.amazon/XXXXXXXXXX: extract ASIN from path only if it is exactly 10 chars.
  * link.amazon uses 9-char IDs for non-ASIN shortlinks; we only use 10-char ones.
  */
 function extractLinkAmazonPathAsin(rawUrl) {
@@ -159,15 +191,14 @@ async function convertAmazon(rawUrl, newTag, amazonDomain) {
 }
 
 /**
- * Strip existing Flipkart affiliate tracking params from a URL before re-tagging.
- * Ported from da-vinci-noob/telegram-affiliate-link-generator-bot (Ruby: affiliateprocess.rb)
- * remove_existing_tracking_ids — strips: affid, affExtParam*, vsugd, otracker, pid, lid
+ * Strip existing Flipkart affiliate tracking params from a canonical URL before re-tagging.
+ * remove_existing_tracking_ids: strips affid, affExtParam*, vsugd, otracker, pid, lid
  */
 function sanitizeFlipkartUrl(url) {
     if (!url) return url;
     try {
         const parsed = new URL(url);
-        // Only strip params from flipkart.com canonical URLs — not short-link domains
+        // Only strip params from flipkart.com and shopsy.in canonical URLs, keep short links intact
         if (!parsed.hostname.includes('flipkart.com') && !parsed.hostname.includes('shopsy.in')) return url;
         ['affid', 'affExtParam1', 'affExtParam2', 'vsugd', 'otracker', 'pid', 'lid', 'ssid'].forEach(p => parsed.searchParams.delete(p));
         return parsed.toString();
@@ -219,7 +250,7 @@ function unwrapDeepLink(rawUrl) {
 }
 
 /**
- * Convert via Cuelinks API. Flipkart excluded — handled by convertFlipkart().
+ * Convert via Cuelinks API. Flipkart excluded: handled by convertFlipkart().
  */
 async function convertViaCuelinks(rawUrl, apiKey, channelId, subid) {
     if (!channelId) channelId = DEFAULT_CHANNEL_ID;
@@ -245,21 +276,20 @@ async function convertViaCuelinks(rawUrl, apiKey, channelId, subid) {
 }
 
 /**
- * Resolve Flipkart short links (fkrt.it, bilty.co, fkr.in, dl.flipkart.com, etc.)
+ * Resolve Flipkart short links (fkrt.it, fkrt.co, fkrt.cc, bilty.co, fkr.in, dl.flipkart.com, etc.)
  * to the final canonical flipkart.com product URL by following the redirect chain.
- * Reference approach: community repos (da-vinci-noob/telegram-affiliate-link-generator-bot)
- * use the same redirect-following strategy for Flipkart WAP links.
  */
 async function resolveFlipkartShortUrl(rawUrl) {
-    const FK_SHORT_HOSTS = ['fkrt.it', 'fkrt.co', 'fkrt.in', 'fkr.in', 'fkr.co', 'bilty.co', 'bilty.in', 'dl.flipkart.com'];
+    if (!rawUrl) return rawUrl;
+    let cleanUrl = cleanTrailingPunctuation(rawUrl);
     let hostname;
-    try { hostname = new URL(rawUrl).hostname.toLowerCase(); } catch (_) { return rawUrl; }
+    try { hostname = new URL(cleanUrl).hostname.toLowerCase(); } catch (_) { return cleanUrl; }
 
     // Only follow redirects for known short-link domains
     const needsExpansion = FK_SHORT_HOSTS.some(d => hostname.includes(d));
-    if (!needsExpansion) return rawUrl;
+    if (!needsExpansion) return cleanUrl;
 
-    let currentUrl = rawUrl;
+    let currentUrl = cleanUrl;
     for (let i = 0; i < 5; i++) {
         try {
             const resp = await axios.get(currentUrl, {
@@ -276,9 +306,6 @@ async function resolveFlipkartShortUrl(rawUrl) {
                 if (next.startsWith('/')) { const b = new URL(currentUrl); next = b.origin + next; }
                 currentUrl = next;
             } else {
-                // Phase 3: HTML body fallback — ported from process_url.rb redirection()
-                // When bilty.co/fkrt serve a WAP HTML page instead of a clean 302,
-                // scan the response body for an embedded canonical flipkart.com URL.
                 if (resp.data && typeof resp.data === 'string') {
                     const bodyMatch = resp.data.match(/https?:\/\/(?:www\.)?(?:flipkart\.com|shopsy\.in)\/[^\s"'<>&]+/i);
                     if (bodyMatch) { currentUrl = bodyMatch[0]; }
@@ -291,7 +318,6 @@ async function resolveFlipkartShortUrl(rawUrl) {
                 try { if (next.startsWith('/')) { const b = new URL(currentUrl); next = b.origin + next; } } catch (_) {}
                 currentUrl = next;
             } else if (err.response && err.response.data && typeof err.response.data === 'string') {
-                // Body scan even on error responses (e.g. 403 with HTML redirect page)
                 const bodyMatch = err.response.data.match(/https?:\/\/(?:www\.)?(?:flipkart\.com|shopsy\.in)\/[^\s"'<>&]+/i);
                 if (bodyMatch) { currentUrl = bodyMatch[0]; }
             }
@@ -303,14 +329,20 @@ async function resolveFlipkartShortUrl(rawUrl) {
 
 /**
  * Flipkart: resolve short WAP links first, then wrap with Cuelinks linksredirect.
- * Bypasses Cuelinks API for Flipkart (WAF Captcha causes "Not Verified" affiliate links).
- * Educational reference: github.com/da-vinci-noob/telegram-affiliate-link-generator-bot
+ * Resilient fallback: always returns a working Cuelinks redirect URL even if resolution
+ * or parameter stripping fails or times out.
  */
 async function convertFlipkart(rawUrl, channelId, subid) {
-    const resolved = await resolveFlipkartShortUrl(rawUrl);
-    // Phase 2: Strip old Flipkart affiliate params before re-tagging (affiliateprocess.rb pattern)
-    const clean = sanitizeFlipkartUrl(resolved);
-    return buildCuelinksFallbackUrl(clean, channelId, subid);
+    if (!rawUrl) return rawUrl;
+    const cleanRaw = cleanTrailingPunctuation(rawUrl);
+    try {
+        const resolved = await resolveFlipkartShortUrl(cleanRaw);
+        const clean = sanitizeFlipkartUrl(resolved || cleanRaw);
+        return buildCuelinksFallbackUrl(clean, channelId, subid);
+    } catch (err) {
+        console.error('convertFlipkart failed for (' + rawUrl + '): ' + err.message);
+        return buildCuelinksFallbackUrl(cleanRaw, channelId, subid);
+    }
 }
 
 async function processLink(rawUrl, opts) {
@@ -335,10 +367,7 @@ async function processLink(rawUrl, opts) {
 }
 
 /**
- * Phase 4: Dynamic strip words from STRIP_WORDS env var.
- * Ported from da-vinci-noob/telegram-affiliate-link-generator-bot (bot.rb delete word list).
- * Usage in .env: STRIP_WORDS=Req Jind,Req Tohana,offline rate,Req sachin
- * These are applied AFTER built-in promo stripping, so no redeploy needed for new patterns.
+ * Dynamic strip words from STRIP_WORDS env var.
  */
 const EXTRA_STRIP_WORDS = (process.env.STRIP_WORDS || '')
     .split(',')
@@ -348,11 +377,22 @@ const EXTRA_STRIP_WORDS = (process.env.STRIP_WORDS || '')
 function stripPromotionalContent(text) {
     if (!text || typeof text !== 'string') return '';
     let c = text;
-    c = c.replace(/^\s*Req\s+.*$/gim, '');
+
+    // Strip lines starting with Req, unless the line contains a link
+    c = c.split('\n').map(line => {
+        if (/^\s*Req\b/i.test(line)) {
+            if (/https?:\/\//i.test(line)) {
+                return line.replace(/^\s*Req\b\s*[^\s:]*[:\s-]*/i, '');
+            }
+            return '';
+        }
+        return line;
+    }).join('\n');
+
     c = c.replace(/\bReq\s+[a-zA-Z0-9_\s-]+\b/gi, '');
     c = c.replace(/Only Mobile,?\s*TV Electronic Deals\s*[\u{1F447}\u{1F449}\u{2B07}\uFE0F\u{1F517}]?/giu, '');
     c = c.replace(/All Loots,?\s*Mobile Deals & Rate update\s*[\u{1F447}\u{1F449}\u{2B07}\uFE0F\u{1F517}]?/giu, '');
-    c = c.replace(/(?:Join|Follow)\s+(?:our|the|this)?\s*(?:WhatsApp|Telegram|Channel|Group|Deals)[^\n]*/gi, '');
+    c = c.replace(/(?:Join|Follow)\s+(?:our|the|this)?\s*(?:WhatsApp|Telegram|Channel|Group|Deals)(?:\s*[:\-\u2013\u2014])?/gi, '');
     c = c.replace(/[<(\[]?(?:https?:\/\/)?(?:www\.)?whatsapp\.com\/channel\/[a-zA-Z0-9_-]+(?:\?[^\s>\])]*)? ?[>)\]]?/gi, '');
     c = c.replace(/[<(\[]?(?:https?:\/\/)?(?:www\.)?chat\.whatsapp\.com\/[a-zA-Z0-9_-]+(?:\?[^\s>\])]*)? ?[>)\]]?/gi, '');
     c = c.replace(/[<(\[]?(?:https?:\/\/)?(?:www\.)?(?:t\.me|telegram\.me|telegram\.dog)\/[a-zA-Z0-9_+.-]+(?:\?[^\s>\])]*)? ?[>)\]]?/gi, '');
@@ -360,7 +400,8 @@ function stripPromotionalContent(text) {
     c = c.replace(/^\s*(?:Check\s+out|More\s+(?:loots?|deals?|offers?)|Join(?:\s+(?:other|our|the|this)?)?\s*(?:channel|group|now)?|Telegram|WhatsApp(?:\s+channel)?|Channel(?:\s+link)?|Follow(?:\s+us)?)\s*[:\-\u2013\u2014]?\s*$/gim, '');
     c = c.replace(/^[\s\u{1F447}\u{1F449}\u{2B07}\uFE0F\u{1F517}\u{1F4CC}\u2022\-\u2013\u2014*#:]+$/gmu, '');
     c = c.replace(/[\u{1F447}\u{1F449}\u{2B07}\uFE0F\u{1F517}]+\s*$/gmu, '');
-    // Phase 4: Apply dynamic STRIP_WORDS from .env (bot.rb delete-list pattern)
+
+    // Apply dynamic STRIP_WORDS from .env
     if (EXTRA_STRIP_WORDS.length > 0) {
         const escaped = EXTRA_STRIP_WORDS.map(w => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
         const dynamicPattern = new RegExp('(?:^|\\s)(?:' + escaped.join('|') + ')(?:\\s|$)', 'gim');
@@ -371,18 +412,33 @@ function stripPromotionalContent(text) {
 }
 
 /**
- * Minimum meaningful text length after stripping — prevents forwarding near-empty messages.
+ * Minimum meaningful text length after stripping: prevents forwarding near-empty messages.
  */
 const MIN_CONTENT_LENGTH = 15;
 
 async function processMessageContent(body, newTag, amazonDomain, cuelinksApiKey, cuelinksChannelId) {
     if (!body || typeof body !== 'string') return '';
 
+    const originalHasFlipkart = hasFlipkartLink(body) || isFlipkartUrl(body);
+    const originalFkLinks = originalHasFlipkart ? extractFlipkartLinks(body) : [];
+
     // Step 1: Strip ALL competitor channel/group invite links and promo noise
     let updatedText = stripPromotionalContent(body);
 
-    // Step 2: Bail early if no meaningful content remains
-    if (!updatedText || updatedText.trim().length < MIN_CONTENT_LENGTH) return '';
+    // Step 2: Bail early if no meaningful content remains (ALLOW all Flipkart links even if short)
+    if (!originalHasFlipkart && (!updatedText || updatedText.trim().length < MIN_CONTENT_LENGTH)) {
+        return '';
+    }
+
+    // If original message had Flipkart link(s) but promo stripping erased them, restore them
+    if (originalHasFlipkart) {
+        for (const rawFk of originalFkLinks) {
+            const cleanFk = cleanTrailingPunctuation(rawFk);
+            if (!updatedText.includes(cleanFk) && !updatedText.includes(rawFk)) {
+                updatedText = updatedText ? (updatedText + '\n' + cleanFk) : cleanFk;
+            }
+        }
+    }
 
     const apiKey = cuelinksApiKey || process.env.CUELINKS_API_KEY;
     const channelId = cuelinksChannelId || process.env.CUELINKS_CHANNEL_ID || DEFAULT_CHANNEL_ID;
@@ -392,11 +448,14 @@ async function processMessageContent(body, newTag, amazonDomain, cuelinksApiKey,
     const remainingUrls = updatedText.match(/(https?:\/\/[^\s]+)/g);
     if (remainingUrls && remainingUrls.length > 0) {
         const results = await Promise.allSettled(remainingUrls.map(async (link) => {
+            const cleanLink = cleanTrailingPunctuation(link);
+            const trailing = link.substring(cleanLink.length);
+
             // Try to unwrap deep-link redirectors before strategy detection
-            const unwrapped = unwrapDeepLink(link);
-            const effectiveLink = unwrapped !== link ? unwrapped : link;
+            const unwrapped = unwrapDeepLink(cleanLink);
+            const effectiveLink = unwrapped !== cleanLink ? unwrapped : cleanLink;
             const converted = await processLink(effectiveLink, opts);
-            return { original: link, converted };
+            return { original: link, converted: converted + trailing };
         }));
 
         for (const result of results) {
@@ -413,16 +472,28 @@ async function processMessageContent(body, newTag, amazonDomain, cuelinksApiKey,
     }
 
     // Step 4: Final clean-up pass and always append our channel link
-    updatedText = stripPromotionalContent(updatedText).trim();
-    if (!updatedText || updatedText.length < MIN_CONTENT_LENGTH) return '';
+    let finalClean = stripPromotionalContent(updatedText).trim();
 
-    updatedText += '\n\n' + TARGET_CHANNEL_LINK;
-    return updatedText;
+    if (originalHasFlipkart) {
+        if (!finalClean || finalClean.length === 0) {
+            finalClean = updatedText.trim();
+        }
+    } else {
+        if (!finalClean || finalClean.length < MIN_CONTENT_LENGTH) return '';
+    }
+
+    if (!finalClean || finalClean.length === 0) return '';
+
+    if (!finalClean.includes(TARGET_CHANNEL_LINK)) {
+        finalClean += '\n\n' + TARGET_CHANNEL_LINK;
+    }
+    return finalClean;
 }
 
 module.exports = {
     TARGET_CHANNEL_LINK, CUELINKS_API_ENDPOINT, DEFAULT_CHANNEL_ID,
-    MERCHANT_STRATEGIES, MIN_CONTENT_LENGTH, EXTRA_STRIP_WORDS,
+    FLIPKART_DOMAINS, FK_SHORT_HOSTS, MERCHANT_STRATEGIES, MIN_CONTENT_LENGTH, EXTRA_STRIP_WORDS,
+    isFlipkartUrl, hasFlipkartLink, extractFlipkartLinks, cleanTrailingPunctuation,
     detectStrategy, extractAsin, extractLinkAmazonPathAsin, resolveAmazonShortUrl,
     sanitizeFlipkartUrl, resolveFlipkartShortUrl,
     convertAmazon, convertFlipkart, convertViaCuelinks, buildCuelinksFallbackUrl,
