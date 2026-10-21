@@ -1,0 +1,31 @@
+[Unit]
+Description=WhatsApp affiliate bot with browser resource isolation
+Wants=network-online.target
+After=network-online.target
+StartLimitIntervalSec=600
+StartLimitBurst=10
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/Whatsapp-Automation
+EnvironmentFile=/home/ubuntu/Whatsapp-Automation/.env
+Environment=NODE_ENV=production
+ExecStart=/usr/bin/node --max-old-space-size=128 index.js
+Restart=on-failure
+RestartSec=20
+TimeoutStopSec=25
+KillMode=control-group
+OOMPolicy=kill
+MemoryAccounting=yes
+MemoryHigh=420M
+MemoryMax=512M
+MemorySwapMax=1G
+TasksMax=256
+UMask=0077
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=wa-bot
+
+[Install]
+WantedBy=multi-user.target
