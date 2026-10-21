@@ -1,6 +1,7 @@
 const axios = require('axios');
 const { URL } = require('url');
 const { sanitizeAmazonUrl } = require('./urlSanitizer');
+const { mapSettled } = require('./concurrency');
 
 const TARGET_CHANNEL_LINK = 'https://whatsapp.com/channel/0029VbDdnbkG3R3e7wu0g70C';
 const CUELINKS_API_ENDPOINT = 'https://developers.cuelinks.com/pub_api/v3/links/convert.json';
@@ -119,6 +120,8 @@ async function resolveAmazonShortUrl(rawUrl) {
         try {
             const response = await axios.get(currentUrl, {
                 maxRedirects: 0,
+                maxContentLength: 262144,
+                maxBodyLength: 65536,
                 timeout: 3000,
                 validateStatus: (s) => s >= 200 && s < 400,
                 headers: {
@@ -261,7 +264,8 @@ async function convertViaCuelinks(rawUrl, apiKey, channelId, subid) {
         const response = await axios.post(
             CUELINKS_API_ENDPOINT,
             { url: rawUrl, channel_id: Number(channelId) || DEFAULT_CHANNEL_ID, shorten: true, subid1: subid },
-            { headers: { 'Authorization': 'Token ' + apiKey, 'Content-Type': 'application/json' }, timeout: 5000 }
+            { headers: { 'Authorization': 'Token ' + apiKey, 'Content-Type': 'application/json' }, timeout: 5000,
+                maxContentLength: 262144, maxBodyLength: 65536 }
         );
         const data = response.data && response.data.data;
         if (data) {
@@ -294,6 +298,8 @@ async function resolveFlipkartShortUrl(rawUrl) {
         try {
             const resp = await axios.get(currentUrl, {
                 maxRedirects: 0,
+                maxContentLength: 262144,
+                maxBodyLength: 65536,
                 timeout: 4000,
                 validateStatus: s => s >= 200 && s < 400,
                 headers: {
@@ -447,7 +453,9 @@ async function processMessageContent(body, newTag, amazonDomain, cuelinksApiKey,
     // Step 3: Convert any affiliate-eligible links found in the cleaned text
     const remainingUrls = updatedText.match(/(https?:\/\/[^\s]+)/g);
     if (remainingUrls && remainingUrls.length > 0) {
-        const results = await Promise.allSettled(remainingUrls.map(async (link) => {
+        const uniqueUrls = [...new Set(remainingUrls)];
+        if (uniqueUrls.length > 50) throw new Error('Message exceeds 50 unique URLs');
+        const results = await mapSettled(uniqueUrls, 2, async (link) => {
             const cleanLink = cleanTrailingPunctuation(link);
             const trailing = link.substring(cleanLink.length);
 
@@ -456,7 +464,7 @@ async function processMessageContent(body, newTag, amazonDomain, cuelinksApiKey,
             const effectiveLink = unwrapped !== cleanLink ? unwrapped : cleanLink;
             const converted = await processLink(effectiveLink, opts);
             return { original: link, converted: converted + trailing };
-        }));
+        });
 
         for (const result of results) {
             if (result.status === 'fulfilled') {

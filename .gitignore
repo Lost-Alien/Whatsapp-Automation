@@ -12,3 +12,4 @@ creds.txt
 ssm-*.json
 .wwebjs_auth/
 .wwebjs_cache/
+.data/

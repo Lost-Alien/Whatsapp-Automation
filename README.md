@@ -1,5 +1,31 @@
 # WhatsApp Affiliate Bot
 
+## Reliable single-server deployment
+
+`deploy/wa-bot.service` runs Node and all Chrome children in one systemd group,
+with a 512 MiB RAM ceiling and up to 1 GiB swap on a shared 1 GiB EC2 host.
+Do not run PM2 and this service against the same LocalAuth directory together.
+These limits protect the other bot and host; sustained memory pressure still
+requires more RAM or a lighter browser workload.
+
+Matching source messages are saved in `.data/queue.json` and processed one at a
+time. URL resolution has two workers. Successful message IDs are retained across
+restarts. Failed jobs retry with backoff up to five attempts and remain saved for
+inspection; an administrator can retry them with `POST /api/queue/retry`.
+WhatsApp does not provide an exactly-once guarantee for ambiguous send failures.
+
+`GET /healthz` returns 200 only when connected and without failed queue jobs.
+`GET /api/stats` includes available host RAM, whole-service RAM, swap and queue
+counts. Host usage excludes reclaimable cache where Linux exposes MemAvailable.
+The existing public dashboard can still display these read-only metrics.
+Private logs, chat listing, QR login and pairing/retry controls require an SSH
+tunnel or the optional `DASHBOARD_TOKEN` (X-Dashboard-Token header, or HTTP Basic
+password). A connected bot rejects attempts to reset pairing.
+
+Disconnects, failed initialization and stuck shutdowns exit for the service
+manager to restart after a delay. Never delete `.wwebjs_auth` during an ordinary
+restart; it contains the saved login. Run `npm test -- --runInBand` before rollout.
+
 A Node.js-based WhatsApp bot that automatically parses Amazon and Flipkart links sent to it, processes them, and replies with properly formatted affiliate links containing your unique tags.
 
 ## Core Features
