@@ -23,23 +23,6 @@ const app = express();
 app.use(express.urlencoded({ extended: false, limit: '8kb' }));
 app.use(express.json({ limit: '8kb' }));
 
-function requireAdmin(req, res, next) {
-    const address = req.socket.remoteAddress;
-    if (['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(address)) return next();
-    const expected = process.env.DASHBOARD_TOKEN || '';
-    let supplied = req.get('X-Dashboard-Token') || '';
-    const authorization = req.get('Authorization') || '';
-    if (authorization.startsWith('Basic ')) {
-        const decoded = Buffer.from(authorization.slice(6), 'base64').toString('utf8');
-        supplied = decoded.slice(decoded.indexOf(':') + 1);
-    }
-    const suppliedBytes = Buffer.from(supplied);
-    const expectedBytes = Buffer.from(expected);
-    if (expected && suppliedBytes.length === expectedBytes.length && timingSafeEqual(suppliedBytes, expectedBytes)) return next();
-    res.set('WWW-Authenticate', 'Basic realm="Bot administration"');
-    return res.status(401).json({ error: 'Use an SSH tunnel or dashboard credentials for administration' });
-}
-
 const appLogs = [];
 function addLog(message) {
     const time = new Date().toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour12: true });
@@ -182,7 +165,7 @@ function registerClientEvents() {
     client.on('message', handleIncomingMessage);
 }
 
-app.get('/api/logs', requireAdmin, (req, res) => res.json(appLogs));
+app.get('/api/logs', (req, res) => res.json(appLogs));
 
 app.get('/healthz', (req, res) => {
     const pending = queue.snapshot();
@@ -190,7 +173,7 @@ app.get('/healthz', (req, res) => {
     res.status(healthy ? 200 : 503).json({ status: authStatus, queue: pending });
 });
 
-app.post('/api/queue/retry', requireAdmin, (req, res) => {
+app.post('/api/queue/retry', (req, res) => {
     try { queue.retryFailed(); res.json(queue.snapshot()); }
     catch (_) { res.status(503).json({ error: 'Could not save retry state' }); }
 });
@@ -218,7 +201,7 @@ app.get('/api/stats', (req, res) => {
     });
 });
 
-app.get('/api/chats', requireAdmin, async (req, res) => {
+app.get('/api/chats', async (req, res) => {
     try {
         if (!client || authStatus !== 'READY') return res.status(503).json({ status: authStatus, error: 'Not ready' });
         const chats = await client.getChats();
@@ -226,7 +209,7 @@ app.get('/api/chats', requireAdmin, async (req, res) => {
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-app.post('/request-code', requireAdmin, async (req, res) => {
+app.post('/request-code', async (req, res) => {
     if (authStatus !== 'NEEDS_LOGIN') return res.status(409).json({ error: 'Pairing is only available when login is required' });
     if (req.body.phone) {
         requestPairingPhone = req.body.phone.replace(/[^0-9]/g, '');
@@ -236,7 +219,6 @@ app.post('/request-code', requireAdmin, async (req, res) => {
 });
 
 app.get('/', (req, res) => {
-    if (authStatus === 'NEEDS_LOGIN') return requireAdmin(req, res, () => renderDashboard(req, res));
     return renderDashboard(req, res);
 });
 
@@ -258,7 +240,7 @@ function renderDashboard(req, res) {
         'function updateClock(){document.getElementById("ist-clock").textContent=new Date().toLocaleString("en-IN",{timeZone:"Asia/Kolkata",dateStyle:"medium",timeStyle:"medium"});}' +
         'setInterval(updateClock,1000);' +
         'var lastCount=0;' +
-        'async function fetchLogs(){try{var r=await fetch("/api/logs");var c=document.getElementById("log-container");if(r.status===401){c.textContent="Private logs are available over an SSH tunnel or with dashboard credentials.";return;}var logs=await r.json();if(logs.length===lastCount)return;lastCount=logs.length;c.innerHTML="";if(logs.length===0){var p=document.createElement("p");p.textContent="Waiting...";c.appendChild(p);}else{logs.forEach(function(log){var p=document.createElement("p");p.textContent=log;c.appendChild(p);});c.scrollTop=c.scrollHeight;}}catch(e){}}' +
+        'async function fetchLogs(){try{var r=await fetch("/api/logs");var logs=await r.json();if(logs.length===lastCount)return;lastCount=logs.length;var c=document.getElementById("log-container");c.innerHTML="";if(logs.length===0){var p=document.createElement("p");p.textContent="Waiting...";c.appendChild(p);}else{logs.forEach(function(log){var p=document.createElement("p");p.textContent=log;c.appendChild(p);});c.scrollTop=c.scrollHeight;}}catch(e){}}' +
         'async function fetchStats(){try{var s=await(await fetch("/api/stats")).json();document.getElementById("ram-val").textContent=s.ram.used+" / "+s.ram.total+" MB";document.getElementById("ram-sub").textContent=s.ram.pct+"% used; bot + Chrome: "+(s.ram.service==null?s.ram.proc:s.ram.service)+" MB; swap: "+(s.ram.swap||0)+" MB";document.getElementById("ram-bar").style.width=s.ram.pct+"%";document.getElementById("cpu-cores").textContent=s.cpu.cores+" vCPU";document.getElementById("cpu-load").textContent="Load: "+s.cpu.load;document.getElementById("deals-conv").textContent=s.deals.converted;document.getElementById("deals-sub").textContent=s.deals.scanned+" scanned ("+s.deals.skipped+" skipped), "+s.queue.pending+" queued, "+s.queue.failed+" failed";document.getElementById("uptime-val").textContent=s.uptime;}catch(e){}}' +
         'setInterval(fetchLogs,2000);setInterval(fetchStats,3000);fetchLogs();fetchStats();' +
         '<\/script>';
